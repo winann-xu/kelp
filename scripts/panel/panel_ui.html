@@ -65,7 +65,13 @@
   .node .hd{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-weight:600}
   .node .kv{display:flex;justify-content:space-between;gap:10px;color:var(--dim);padding:2px 0}
   .node .kv span{white-space:nowrap}
-  .node .kv b{color:var(--txt);font-weight:500;text-align:right;word-break:break-all}
+  .node .kv b{color:var(--txt);font-weight:500;text-align:right;word-break:break-all;flex:1 1 auto;min-width:0}
+  .node .kv.addrbox > b{display:flex;flex-direction:column;align-items:flex-end;gap:1px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.45}
+  .node .kv.addrbox .addr{white-space:nowrap}
+  .node .kv.portsbox > b{font-weight:400;display:flex;flex-wrap:wrap;gap:5px;align-items:center;justify-content:flex-end}
+  .port{background:var(--bg2);border:1px solid var(--line);border-radius:7px;padding:1px 6px;
+    font-size:11.5px;color:var(--dim);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
   .node .err{color:var(--bad);font-size:12px;margin-top:6px;word-break:break-all}
   .alert{display:none;align-items:center;gap:10px;margin:0 0 16px;padding:11px 14px;border-radius:13px;
          background:rgba(255,196,83,.12);border:1px solid rgba(255,196,83,.45);color:#ffdd9e;font-size:13.5px}
@@ -142,15 +148,21 @@ function deviceCard(d) {
 
 function nodeCard(n) {
   const self = n.self || {};
-  const kv = (k, v) => `<div class="kv"><span>${k}</span><b>${esc(v || "—")}</b></div>`;
+  const kv = (k, v, o) => {
+    o = o || {};
+    const body = o.raw ? (v || "—") : esc(v || "—");
+    return `<div class="kv${o.cls ? " " + o.cls : ""}"><span>${k}</span><b>${body}</b></div>`;
+  };
+  const ips = (self.public_ip || []).filter(Boolean);
+  const ports = String(self.listeners || "").split("·").map((s) => s.trim()).filter(Boolean);
   return `<div class="node">
     <div class="hd"><span class="dot ${n.online ? "ok" : "bad"}"></span>${esc(n.name)}</div>
     ${kv("RPC", n.rpc)}
     ${kv("组网 IP", self.ipv4_addr)}
-    ${kv("公网 IP", (self.public_ip || []).join(" / "))}
+    ${kv("公网 IP", ips.map((a) => `<span class="addr">${esc(a)}</span>`).join(""), { raw: true, cls: "addrbox" })}
     ${kv("NAT 类型", self.nat_type)}
     ${kv("代理网段", (self.proxy_cidrs || []).join(", "))}
-    ${kv("端口", self.listeners || "—")}
+    ${kv("端口", ports.map((x) => `<span class="port">${esc(x)}</span>`).join(""), { raw: true, cls: "portsbox" })}
     ${n.note ? kv("备注", n.note) : ""}
     ${n.online ? "" : `<div class="err">${esc(n.error || "不可达")}</div>`}
   </div>`;
