@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1020">
+<title>海带 · Kelp 组网面板</title>
+<style>
+  :root{
+    --bg:#080c18; --bg2:#0f1526; --card:#141b2f; --card2:#1a2338;
+    --line:#243050; --txt:#e8edf9; --dim:#8d9ab5; --dim2:#67748f;
+    --ok:#35e08b; --warn:#ffc453; --bad:#ff5d6c; --accent:#5b8cff; --p2p:#35e08b; --relay:#ffc453;
+    --shadow:0 10px 30px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  body{
+    margin:0; background:radial-gradient(1200px 600px at 15% -10%,#16224a 0%,transparent 60%),
+                       radial-gradient(900px 500px at 110% 10%,#123a3a 0%,transparent 55%), var(--bg);
+    color:var(--txt); font:15px/1.55 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    min-height:100vh; padding:calc(18px + env(safe-area-inset-top)) 16px calc(28px + env(safe-area-inset-bottom));
+  }
+  .wrap{max-width:1080px;margin:0 auto}
+  header{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:18px}
+  h1{font-size:21px;margin:0;letter-spacing:.5px}
+  h1 span{color:var(--accent)}
+  .chip{
+    display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--dim);
+    background:var(--bg2);border:1px solid var(--line);border-radius:999px;padding:5px 11px;
+  }
+  .chip b{color:var(--txt);font-weight:600}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--dim2)}
+  .dot.ok{background:var(--ok);box-shadow:0 0 0 0 rgba(53,224,139,.6);animation:pulse 2.2s infinite}
+  .dot.bad{background:var(--bad)}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(53,224,139,.5)}70%{box-shadow:0 0 0 9px rgba(53,224,139,0)}100%{box-shadow:0 0 0 0 rgba(53,224,139,0)}}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:14px 0 20px}
+  .stat{background:linear-gradient(180deg,var(--card),var(--bg2));border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+  .stat .k{font-size:12px;color:var(--dim);margin-bottom:4px}
+  .stat .v{font-size:20px;font-weight:650;letter-spacing:.3px}
+  .stat .v small{font-size:12px;color:var(--dim);font-weight:400;margin-left:4px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
+  .dev{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:15px 16px 13px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+  .dev::before{content:"";position:absolute;inset:0 auto 0 0;width:3px;background:var(--dim2)}
+  .dev.on::before{background:var(--ok)}
+  .dev.off::before{background:var(--bad)}
+  .dev.off{opacity:.72}
+  .dev .top{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:2px}
+  .dev .name{font-size:16.5px;font-weight:650;display:flex;align-items:center;gap:8px;min-width:0}
+  .dev .name span.hn{font-size:12.5px;color:var(--dim);font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .dev .role{font-size:11.5px;color:var(--dim);background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:2px 7px;white-space:nowrap}
+  .dev .ip{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;color:var(--accent);margin:6px 0 10px}
+  .badges{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+  .badge{font-size:11.5px;border-radius:8px;padding:3px 8px;border:1px solid var(--line);color:var(--dim);background:var(--bg2)}
+  .badge.p2p{color:#0a1a12;background:var(--p2p);border-color:transparent;font-weight:650}
+  .badge.relay{color:#241c05;background:var(--relay);border-color:transparent;font-weight:650}
+  .badge.local{color:var(--txt);background:var(--card2)}
+  .badge.bad{color:#fff;background:rgba(255,93,108,.22);border-color:rgba(255,93,108,.45)}
+  .metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:8px 10px;font-size:13px}
+  .metrics div{color:var(--dim)}
+  .metrics b{color:var(--txt);font-weight:550}
+  .foot{display:flex;justify-content:space-between;gap:10px;margin-top:11px;padding-top:9px;border-top:1px dashed var(--line);font-size:12px;color:var(--dim2)}
+  .empty{color:var(--dim);text-align:center;padding:40px 0}
+  section h2{font-size:13px;color:var(--dim);font-weight:600;letter-spacing:.6px;margin:26px 0 10px;text-transform:uppercase}
+  .nodes{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+  .node{background:var(--card2);border:1px solid var(--line);border-radius:14px;padding:13px 14px;font-size:13px}
+  .node .hd{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-weight:600}
+  .node .kv{display:flex;justify-content:space-between;gap:10px;color:var(--dim);padding:2px 0}
+  .node .kv span{white-space:nowrap}
+  .node .kv b{color:var(--txt);font-weight:500;text-align:right;word-break:break-all}
+  .node .err{color:var(--bad);font-size:12px;margin-top:6px;word-break:break-all}
+  .alert{display:none;align-items:center;gap:10px;margin:0 0 16px;padding:11px 14px;border-radius:13px;
+         background:rgba(255,196,83,.12);border:1px solid rgba(255,196,83,.45);color:#ffdd9e;font-size:13.5px}
+  .alert.show{display:flex}
+  .alert b{color:#fff}
+  .hint{margin-top:22px;font-size:12.5px;color:var(--dim2);line-height:1.7}
+  .hint code{background:var(--bg2);border:1px solid var(--line);border-radius:6px;padding:1px 5px;font-size:12px}
+  @media (max-width:560px){
+    body{padding-left:12px;padding-right:12px}
+    .grid,.nodes{grid-template-columns:1fr}
+    h1{font-size:19px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>海带 <span>·</span> Kelp 组网面板</h1>
+    <span class="chip"><span class="dot" id="hdDot"></span><b id="hdNet">—</b></span>
+    <span class="chip" id="hdTime">读取中…</span>
+  </header>
+
+  <div class="alert" id="alert"><span>⚠️</span><span><b>有流量正在走中继</b> —— 中继要花公网节点的出网流量（0.8 元/GB）。正常状态应全部是 P2P 直连，出现中继请排查 NAT/UDP/防火墙。</span></div>
+  <div class="stats" id="stats"></div>
+  <div class="grid" id="devices"><div class="empty">加载中…</div></div>
+
+  <section>
+    <h2>采集节点（RPC 数据源）</h2>
+    <div class="nodes" id="nodes"></div>
+  </section>
+
+  <div class="hint">
+    <b>怎么看这块板子</b><br>
+    · <b class="badge p2p">P2P 直连</b> 表示两台设备之间是点对点直连——不经过公网节点转发，<b>不产生流量费用</b>。<br>
+    · <b class="badge relay">中继</b> 表示打洞失败、数据经公网节点转发——按出网流量计费（0.8 元/GB），出现即需排查。<br>
+    · EasyTier 是去中心化网络，没有权威设备名册：本页"离线"是拿<code>期望设备清单</code>与各节点实时邻居表比对后判定的，并记录最后在线时间。<br>
+    · 面板只读：只查询各节点的 RPC（<code>easytier-cli -p &lt;addr&gt;:15888</code>），不向任何节点下发配置。
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => (s ?? "").toString().replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]));
+const shortVer = (v) => { const s = (v ?? "").toString(); const i = s.indexOf("-"); return i > 0 ? s.slice(0, i) : s; };
+
+function costBadge(d) {
+  if (!d.online) return '<span class="badge bad">离线</span>';
+  if (d.cost === "p2p") return '<span class="badge p2p">P2P 直连</span>';
+  if (d.cost === "Local") return '<span class="badge local">本机</span>';
+  if (d.cost === "-") return '<span class="badge">未知</span>';
+  return '<span class="badge relay">中继 · 计费</span>';
+}
+
+function deviceCard(d) {
+  const cls = d.online ? "dev on" : "dev off";
+  const seen = d.online ? "在线" : (d.last_seen ? `最后在线 ${esc(d.last_seen)}` : "未见过在线");
+  return `<div class="${cls}">
+    <div class="top">
+      <div class="name">${esc(d.label || d.hostname || d.ipv4)} <span class="hn">${esc(d.hostname)}</span></div>
+      ${d.role ? `<span class="role">${esc(d.role)}</span>` : ""}
+    </div>
+    <div class="ip">${esc(d.ipv4)}</div>
+    <div class="badges">${costBadge(d)}${d.tunnel && d.tunnel !== "-" ? `<span class="badge">${esc(d.tunnel).toUpperCase()}</span>` : ""}${d.nat && d.nat !== "-" ? `<span class="badge">NAT ${esc(d.nat)}</span>` : ""}</div>
+    <div class="metrics">
+      <div>延迟 <b>${d.lat_ms === "-" ? "—" : esc(d.lat_ms) + " ms"}</b></div>
+      <div>丢包 <b>${esc(d.loss)}</b></div>
+      <div>版本 <b title="${esc(d.version)}">${esc(shortVer(d.version))}</b></div>
+      <div>收 <b>${esc(d.rx)}</b></div>
+      <div>发 <b>${esc(d.tx)}</b></div>
+      <div>状态 <b>${seen}</b></div>
+    </div>
+  </div>`;
+}
+
+function nodeCard(n) {
+  const self = n.self || {};
+  const kv = (k, v) => `<div class="kv"><span>${k}</span><b>${esc(v || "—")}</b></div>`;
+  return `<div class="node">
+    <div class="hd"><span class="dot ${n.online ? "ok" : "bad"}"></span>${esc(n.name)}</div>
+    ${kv("RPC", n.rpc)}
+    ${kv("组网 IP", self.ipv4_addr)}
+    ${kv("公网 IP", (self.public_ip || []).join(" / "))}
+    ${kv("NAT 类型", self.nat_type)}
+    ${kv("代理网段", (self.proxy_cidrs || []).join(", "))}
+    ${kv("端口", self.listeners || "—")}
+    ${n.note ? kv("备注", n.note) : ""}
+    ${n.online ? "" : `<div class="err">${esc(n.error || "不可达")}</div>`}
+  </div>`;
+}
+
+async function render() {
+  try {
+    const res = await fetch("/api/status", { cache: "no-store" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const s = await res.json();
+    const sum = s.summary || {};
+    $("hdNet").textContent = s.network || "—";
+    $("hdTime").textContent = "更新 " + (s.generated_at || "—") + " · 每 " + (s.poll_interval || 5) + "s 自动刷新";
+    $("hdDot").className = "dot " + (sum.online ? "ok" : "bad");
+    $("alert").className = "alert" + ((sum.relay ?? 0) > 0 ? " show" : "");
+    $("stats").innerHTML = [
+      ["在线设备", `${sum.online ?? 0}<small>/ ${sum.expect_total ?? sum.total ?? 0} 台期望</small>`],
+      ["P2P 直连", `${sum.p2p ?? 0}<small>条</small>`],
+      ["中继", `${sum.relay ?? 0}<small>条（计费）</small>`],
+      ["累计收", `${sum.rx_total ?? "—"}`],
+      ["累计发", `${sum.tx_total ?? "—"}`],
+    ].map(([k, v]) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
+    $("devices").innerHTML = (s.devices || []).length
+      ? s.devices.map(deviceCard).join("")
+      : '<div class="empty">暂无设备</div>';
+    $("nodes").innerHTML = (s.nodes || []).map(nodeCard).join("");
+  } catch (e) {
+    $("hdTime").textContent = "读取失败：" + e.message;
+    $("hdDot").className = "dot bad";
+  }
+}
+render();
+setInterval(render, 5000);
+</script>
+</body>
+</html>

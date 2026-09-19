@@ -1,6 +1,6 @@
 # M1 验收记录：公网节点（进行中）
 
-状态：**hub 已部署常驻；安全组已由用户放行（11010 已验证连通）；组装端节点时发现并修复参数笔误**（2026-09-19 22:0x~22:3x）
+状态：**✅ 完成**（2026-09-19 22:3x）—— hub 常驻、A 站点节点接入、**P2P 直连成立**（16ms / 0% 丢包 / tunnel=tcp）、安全组放行、FR9 只读面板上线。
 
 ## 1. 已完成
 
@@ -45,6 +45,31 @@
 | Mac 侧 EasyTier 连接 hub | `handshake timeout after 1.984477708s`（connect 后握手无响应） |
 
 → 需在阿里云安全组放行 **11010/TCP 与 11010/UDP**（源 0.0.0.0/0，或限定常用出口 IP）。
+
+## 1.3 A 站点节点接入结果（50.9）
+
+| 项 | 证据 |
+|---|---|
+| 服务 | `easytier-node.service` **active**、enabled；`/etc/easytier/kelp.env` 600 |
+| 组网 IP | 10.144.144.9/24，子网代理 `192.168.50.0/24`（hub 路由表显示 `192.168.50.0/24 dev tun0 proto static`） |
+| **P2P 直连** | hub 侧 `easytier-cli peer`：`10.144.144.9 kelp-50-9 cost=p2p lat=16.43ms loss=0.0% tunnel=tcp` ✅ **未走中继（不产生流量费）** |
+| overlay 延迟 | hub → 10.144.144.9 ping 16.60ms（家宽↔上海 P2P） |
+| 子网代理穿透 | hub 直接 ping 通家里 `192.168.50.1`（爱快）/ `.10`（Mac）/ `.9`（50.9）；`https://192.168.50.9/` 返回 401（ollama nginx 鉴权，链路真实可用） |
+| 关键结论 | **无需开启 50.9 的 `ip_forward`、无需 iptables NAT**：EasyTier 在用户态完成转发，`ip_forward` 保持 0 即可穿透到 LAN（避免了对系统网络设置的改动，铁律 6.4 无触发） |
+
+> 注：50.9 的 RPC 白名单当前只写 `10.144.144.1`（hub），因此本机 `easytier-cli` 直查会被拒（面板从 hub 侧查询不受影响）。若要在 50.9 本地用 CLI 查看，白名单需补 `127.0.0.1`——留待下次 sudo 窗口一并处理。
+
+## 1.4 FR9 只读面板（已上线）
+
+| 项 | 值 |
+|---|---|
+| 地址 | `http://47.116.73.216:18080`（用户/口令见 IAM 侧：`~/.config/kelp/kelp.env`，不入库） |
+| 实现 | `/opt/kelp/panel.py`（Python 标准库，无第三方依赖）+ `/opt/kelp/panel_ui.html`；systemd `kelp-panel.service`（Restart=always） |
+| 数据源 | 各节点 RPC：`easytier-cli -p <addr>:15888 -o json peer/node`，5s 一轮；**只读，不下发配置** |
+| 安全 | HTTP Basic 认证（sha256+salt，口令不落盘明文之外的日志）；未认证 401；已核验 API 响应**不含网络密钥**（`node.config` 字段被丢弃） |
+| 离线判定 | 以配置中的"期望设备清单"与各节点实时邻居表比对，记录最后在线时间 |
+| 计费护栏 | 中继条数 > 0 时页面顶部弹出橙色警示（中继 = 0.8 元/GB） |
+| 验收 | 从家访问 `api/status` HTTP 200（0.05s）；页面 10134B；桌面/手机双视口离屏渲染截图复核（WKWebView + 视觉检查），修正版本号折行、"监听"竖排拆字、端口串乱换行三处 |
 
 ## 3. 待办
 

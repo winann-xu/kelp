@@ -8,17 +8,18 @@
 
 ## 当前状态
 
-- 阶段：**阶段 1 —— M0 已完成；M1 部分完成（hub 常驻，外部可达性被阿里云安全组阻塞）**
-- 更新时间：2026-09-19（用户已下达"开始项目"；FR9 定为路径 C：自建只读面板，部署在 47.116.73.216，UI 需美观且电脑/手机均可访问）
-- 下一步：① 用户放行安全组（11010 TCP+UDP、18080 TCP）→ 复测组网；② 用户在 50.9 上执行 `sudo bash /tmp/kelp-node-setup.sh`（文件已就位、二进制已投递并校验）；③ 确认 B 站点（NAS 侧）由哪台设备做节点
+- 阶段：**M0 ✅ / M1 ✅ 完成；M2 部分完成（A 站点侧已验收，缺 B 站点）**
+- 更新时间：2026-09-19 22:3x
+- 下一步：① 确认 B 站点（NAS 侧 192.168.1.0/24）由哪台设备做节点（环境：有无 Docker/root/出口）→ 完成 M2 跨站点验收；② M3 手机接入（Android App / iOS WireGuard 门户）；③ M4 网关模式 + 流量告警 + 回滚演练
+- 面板已上线：`http://47.116.73.216:18080`（用户名/口令见 `~/.config/kelp/kelp.env`，不入库）
 
 ## 里程碑状态表
 
 | 里程碑 | 内容 | 状态 | 验收证据 |
 |---|---|---|---|
 | M0 | 勘测与骨架（目录/git、VPS 与两站点基线勘测报告） | ✅ 完成（2026-09-19） | docs/00-environment.md（VPS 规格、安全组实测、Stash TUN 假阳性取证、延迟/带宽基线、安装包投递链） |
-| M1 | 公网节点上线（EasyTier 私有节点 + systemd + 安全组 11010） | 🔶 部分完成（2026-09-19）：hub 已部署常驻，**外部可达性被安全组阻塞** | docs/M1-acceptance.md（版本/监听/私有模式/TUN 证据 + 阻塞证据链） |
-| M2 | 两站点组网 + 子网代理（含 P2P 路径证明与速率基线） | ⏸ 未开始 | 计划产出 docs/M2-acceptance.md |
+| M1 | 公网节点上线（EasyTier 私有节点 + systemd + 安全组 11010） | ✅ 完成（2026-09-19 22:3x） | docs/M1-acceptance.md（hub 常驻 + 50.9 接入 + P2P 直连 16ms + 子网代理穿透 LAN + FR9 面板上线） |
+| M2 | 两站点组网 + 子网代理（含 P2P 路径证明与速率基线） | 🔶 部分（2026-09-19）：A 站点（50.9）已接入并可从上海穿透访问家里 LAN；**缺 B 站点（NAS 侧）** | docs/M1-acceptance.md §1.3（P2P 证据 + 穿透实测）；待补 docs/M2-acceptance.md |
 | M3 | 手机接入（Android App / iOS WireGuard 门户） | ⏸ 未开始 | 计划产出 docs/M3-acceptance.md |
 | M4 | 网关模式 + 收尾（流量告警、回滚演练） | ⏸ 未开始 | 计划产出 docs/M4-acceptance.md |
 
@@ -39,11 +40,13 @@
 - 安装包投递：ghfast 镜像 → VPS/Mac → LAN scp，SHA-256 三处核对（D13；VPS 直连 GitHub 超时、50.9 连镜像 000）
 - FR9 面板端口预留 **18080/TCP**，因未备案走 `http://IP:18080` + 强口令（D14）
 - 外网连通性结论只采信 50.9 或不绑接口时的假阴性规避做法（D15）
+- 子网代理**不需要**开启 50.9 的 `ip_forward`、也不需要 iptables NAT（实测 EasyTier 用户态转发，铁律 6.4 未被触发）（D16）
+- FR9 面板已按路径 C 上线（`http://47.116.73.216:18080`，Python 标准库实现 + systemd，只读、Basic 认证、中继预警）（D17）
 
 ## 待办 / 阻塞
 
-- [ ] **阻塞项（当前）**：阿里云安全组放行 `11010 TCP+UDP`（组网）与 `18080 TCP`（面板）——已实测确认未放行；或提供具备 ECS 权限的 AccessKey 由 Agent 代加
-- [ ] **待用户执行一次**：在 50.9 上 `sudo bash /tmp/kelp-node-setup.sh`（脚本、身份文件、二进制 `/tmp/kelp-et.zip` 已就位，SHA-256 已校验；50.9 的 sudo 需要密码，Hermes 不能代输）
+- [x] 安全组放行（用户已做）：11010 TCP+UDP、18080 TCP；11010 复测连通 ✅
+- [x] 50.9 节点安装完成（用户执行；`--peers` 参数笔误已修）→ 服务 active、P2P 直连成立 ✅
 - [ ] M1 收尾：安全组放行后复测双向可见 + `systemctl restart` 与真实 reboot 各一次验证自启
 - [ ] 待确认：B 站点（NAS 侧 192.168.1.0/24）由哪台设备做节点，是否有 Docker/root
 - [ ] 待确认：是否为该项目创建 GitHub 远端仓库（AGENT.md 要求项目一开始就配置 git + GitHub）；本地 `git init` 已完成，远端未建（另需确认 public/private）
@@ -55,5 +58,6 @@
 ## 日志
 
 - 2026-09-19 立项（用户指令）：完成节点小宝替代方案调研 v1→v3（文档存于 /Users/winann/04-AI调研报告/，含实测数据与横向对比）；用户拍板项目名（海带/Kelp）、目录、公网节点、两条约束（按流量计费、未备案）与精简指令；创建本任务书（v1.0）与本检查点；`git init`（main）。**未对任何目标机器执行变更操作**（用户要求先审任务书）。
+- 2026-09-19 22:3x **M1 收口 + 面板上线**（用户放行安全组、在 50.9 执行安装脚本后）：① 安全组复测 tcp/11010 从 50.9 0.02s CONNECTED；② 首次安装失败（退出码 2）定位为 `--peer` 应为 `--peers`，修正并以"普通用户预检参数"法验证后由用户重跑，服务 active；③ 组网成立：hub 视角 `10.144.144.9 cost=p2p lat=16.43ms loss=0.0% tunnel=tcp`，overlay ping 16.6ms；④ **子网代理穿透实测**：从上海 hub 直接 ping 通家里 192.168.50.1/.10/.9，`https://192.168.50.9/` 返回 401（链路真实可用），且 50.9 的 `ip_forward` 仍为 0 → 结论：无需动系统转发与 iptables；⑤ **FR9 只读面板上线**：`/opt/kelp/panel.py` + `panel_ui.html` + `kelp-panel.service`（Python 标准库、Basic 认证、5s 轮询各节点 RPC、离线名册比对、中继预警）；本机与家宽双端验证 200/401 与无密钥泄漏；用离屏 WKWebView 截图 + 视觉检查复核桌面/手机两版 UI 并修掉三处排版瑕疵；⑥ 任务书与验收文档同步（D16/D17）。
 - 2026-09-19 M0 完成 + M1 启动（用户指令"开始项目"）：① VPS 只读勘测（Ubuntu 24.04.4 / 2C1.7G / 40G / 无 docker / iptables 全 ACCEPT，端口过滤在安全组）→ docs/00-environment.md；② 装 EasyTier 2.6.4（ghfast 镜像，VPS 直连 GitHub 超时）为 hub：`/usr/local/bin/easytier-{core,cli}` + `/etc/systemd/system/easytier.service`（EnvironmentFile 注入密钥、`LimitNOFILE=1048576`、`Restart=always`），`private_mode=true`、组网 IP 10.144.144.1、监听 tcp/udp 11010、RPC 仅 127.0.0.1:15888、TUN 就绪；③ 连通性实测发现**安全组只放行 22**（11010 TCP 从 50.9 超时、UDP 五端口 tcpdump 零包）→ M1 阻塞；④ 修正此前误判：Mac 上 `nc` 显示 11010 "OPEN" 是**假阳性**，`route get 47.116.73.216` 走 `utun6`（Stash TUN 模式），绑定 en0 后真实结果为超时；⑤ 产出 `scripts/setup-node.sh`（幂等节点安装器）并把二进制（SHA-256 `61b659ea…dfd6` 三处一致）+ 身份文件 + 一键包装脚本投递到 50.9 `/tmp`（600）；⑥ 任务书新增 D12–D15 与风险行。
 - 2026-09-19 用户提出两项确认（① 是否有统一界面查看设备/IP/在线离线；② 非节点设备改 DNS 是否影响公网访问）。Agent 查阅 EasyTier 官方文档（Web 控制台部署参数、FAQ 纳管限制、`easytier-cli` 字段）后答复，并更新任务书至 v1.1：新增 **FR9**（可视化三路径 + "去中心化无名册"限制说明 + 名册比对实现离线判定）、重写 **FR3**（静态路由优先 / DNS 默认不改 / 改默认网关为次选）、新增铁律 **6.7**、M1/M2/M4 验收各补一项（含 M4 公网基线对比专项）、风险表 3 行、决策 **D9–D11**。仍未对任何目标机器做变更。
