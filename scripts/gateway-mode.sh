@@ -64,7 +64,9 @@ run_test() {   # 输出 "小包ping|大包ping|TCP握手|HTTPS"
     if ip netns exec "$NS" timeout 6 ping -c2 -W2 "$B_TARGET" >/dev/null 2>&1; then icmp=小包通; else icmp=小包不通; fi
     if ip netns exec "$NS" timeout 8 ping -c2 -W2 -s 1400 "$B_TARGET" >/dev/null 2>&1; then big=大包通; else big=大包不通; fi
     if ip netns exec "$NS" timeout 8 bash -c "echo > /dev/tcp/$B_TARGET/5667" >/dev/null 2>&1; then tcp=握手通; else tcp=握手不通; fi
-    code=$(ip netns exec "$NS" timeout 15 curl -sk -o /dev/null -w '%{http_code}' "$B_URL" 2>/dev/null)
+    # 注意：主机上若设了 http_proxy/https_proxy（实测 50.9 有），curl 会把组网地址也塞进代理，
+    # 代理不通时会得到假失败的 000。组网/内网目标必须绕开代理。
+    code=$(ip netns exec "$NS" timeout 15 curl -sk --noproxy '*' -o /dev/null -w '%{http_code}' "$B_URL" 2>/dev/null)
     printf '%s|%s|%s|%s' "$icmp" "$big" "$tcp" "${code:-000}"
 }
 
@@ -74,6 +76,9 @@ selftest() {
     say "       目标：$B_URL（B 站点飞牛 NAS）"
     if ! setup_ns; then say "  自测环境创建失败（缺 iproute2 / netns 支持）"; cleanup_ns; return 2; fi
     say "  隧道 MTU: $TUN_IF=$(cat /sys/class/net/$TUN_IF/mtu 2>/dev/null || echo '?')  内网 MTU: $LAN_IF=$(cat /sys/class/net/$LAN_IF/mtu 2>/dev/null || echo '?')"
+    if [ -n "${http_proxy:-}${https_proxy:-}${HTTP_PROXY:-}${HTTPS_PROXY:-}" ]; then
+        say "  ⚠️ 本机设有 http_proxy/https_proxy：自测已用 --noproxy '*' 绕开，避免假失败"
+    fi
     local r; r=$(run_test)
     say "  ping $B_TARGET（56B）  : ${r%%|*}"
     local rest=${r#*|}
