@@ -1,0 +1,18 @@
+# macOS
+.DS_Store
+._*
+
+# 凭据与本地配置（严禁入库）
+.env
+.env.*
+*.pem
+*.key
+credentials*
+secrets*
+config/network-secret*
+
+# 运行产物
+*.log
+logs/
+tmp/
+dist/
