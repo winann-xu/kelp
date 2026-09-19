@@ -119,6 +119,43 @@ Range: bytes=100-199                      → 206, 100 bytes
 
 > ⚠️ **WireGuard 官方客户端安装包无法托管**：`download.wireguard.com`、`f-droid.org` 从国内及本机均不可达（实测超时/000），GitHub 上亦无官方 Release 资产。故下载页只给 App Store / Google Play / 官网链接，并明确标注「经公网节点 · 0.8 元/GB」。**Windows/macOS/Android 建议直接用 EasyTier 原生客户端（P2P，不计费）**，WireGuard 实际只为 iOS 服务。
 
+### 2.7 面板在浏览器里打不开的定位与修复（2026-09-20 00:4x）
+
+**现象**：手机能开（要手动点过证书警告），电脑浏览器打不开；但同一台 Mac 上 `curl` 秒开（连接 23ms、首字节 80ms）。
+
+**定位过程（关键是对照实验）**：
+
+| 测试 | 结果 | 说明 |
+|---|---|---|
+| Mac 上 `curl -sk` 面板 | 200，0.08–0.18s | 网络、TLS、服务全部正常 |
+| Mac 上 `curl`（**不带 -k**，即做证书校验） | 000 | 证书不被信任 ⇒ 浏览器会拦 |
+| `security verify-cert` 面板证书 | 成功（装信任前也"成功"，但 WebKit 仍拒绝） | 需要真正写入钥匙串信任 |
+| **用 Safari 同引擎的 WKWebView、不做任何证书豁免** | **❌ NSURLErrorDomain -1001 超时** | **复现了浏览器打不开** |
+| 同一 WKWebView 加载 baidu | ✅ | 证明测试工具本身没问题 |
+| 把证书装进用户钥匙串信任后再测 | **✅ 加载成功，标题「海带 · Kelp 客户端下载」** | **根因确认：证书信任链** |
+
+**结论**：浏览器（Chrome/Safari）走的是系统证书信任链，与 curl 的行为完全不同——curl 用自带 CA 包、且我全程加了 `-k`，所以一直"看起来正常"，把真问题遮住了。**判据更正：验证"网页在浏览器里能不能打开"必须用浏览器引擎（WKWebView/真浏览器或 `curl` 不带 `-k`），不能用 `curl -k` 的结论代替。**
+
+**修复**：
+1. 重签面板证书（`scripts/renew-panel-cert.sh`）：保留 SAN `IP:47.116.73.216`，新增 `IP:127.0.0.1`、`DNS:localhost`、`EKU=serverAuth`、`critical keyUsage`；旧证书就地备份为 `panel.{crt,key}.bak.20260920003424`。
+2. 把证书装进用户钥匙串信任（用户 Mac）：`security add-trusted-cert -r trustRoot -k ~/Library/Keychains/login.keychain-db kelp-panel.crt`；**撤销**：`security delete-certificate -c kelp-panel`。
+3. 证书公开到下载页（`/dl/kelp-panel.crt`），页内给出 Windows/macOS/iOS 三平台导入步骤，供其他设备一次性消除警告。
+
+### 2.8 面板内新增客户端下载入口（用户要求）
+
+- 顶部导航新增高亮入口「⬇ 客户端下载」→ `/dl/`；
+- 新增「客户端下载」区块：Windows / macOS(两种芯片) / Android 直链按钮 + 「全部文件/校验值/二维码」入口；
+- 同区块并列「手机接入配置（WireGuard 门户）」：二维码 `/wg/qr.png` + 配置文件 `/wg/conf`（均需登录，含私钥不入公网）。
+
+### 2.9 公网节点出网带宽实测（"慢"的根源）
+
+| 下载方 | 速度 | 说明 |
+|---|---|---|
+| 家里 Mac（真实公网路径） | 435 KB/s ≈ 3.5 Mbps | 下 10.4MB 用 25s |
+| 站点 50.9 | 127 KB/s ≈ 1 Mbps | 下同一个包用 86s |
+
+面板页面本身只有 9.6KB（0.1s 级），所以"手机慢"不是面板的问题，而是**公网节点出网带宽只有 1–3.5 Mbps**（ECS 带宽配置所致）。影响：下载 143MB 客户端约需 6–20 分钟；面板日常浏览无感。要提速只有两条路：调高 ECS 带宽（要加钱），或把客户端包改从 NAS（家宽上传）分发。
+
 ## 3. 与任务书验收口径的偏差（需记录）
 
 任务书 M3 验收原写「`easytier-cli peer` 可见移动端节点」——该口径只对**原生客户端**成立。走 **WireGuard 门户**的手机**不会出现在 peer 列表**，而是出现在 `vpn-portal` 的 `connected_clients`（已接进面板）。故 M3 验收口径改为：

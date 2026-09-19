@@ -28,6 +28,14 @@
     background:var(--bg2);border:1px solid var(--line);border-radius:999px;padding:5px 11px;
   }
   .chip b{color:var(--txt);font-weight:600}
+  a.chip{text-decoration:none}
+  a.chip.dl{color:#0a1a12;background:var(--accent);border-color:transparent;font-weight:650}
+  a.chip.dl:hover{filter:brightness(1.08)}
+  .dlbtns{display:flex;flex-wrap:wrap;gap:8px;margin-top:11px}
+  a.btn{display:inline-flex;align-items:center;gap:6px;text-decoration:none;font-size:13px;font-weight:600;
+        color:#0a1a12;background:var(--p2p);border-radius:10px;padding:7px 12px}
+  a.btn.line{background:transparent;border:1px solid var(--line);color:var(--txt);font-weight:500}
+  a.btn:hover{filter:brightness(1.08)}
   .dot{width:8px;height:8px;border-radius:50%;background:var(--dim2)}
   .dot.ok{background:var(--ok);box-shadow:0 0 0 0 rgba(53,224,139,.6);animation:pulse 2.2s infinite}
   .dot.bad{background:var(--bad)}
@@ -93,6 +101,7 @@
     <h1>海带 <span>·</span> Kelp 组网面板</h1>
     <span class="chip"><span class="dot" id="hdDot"></span><b id="hdNet">—</b></span>
     <span class="chip" id="hdTime">读取中…</span>
+    <a class="chip dl" href="/dl/" target="_blank" rel="noopener">⬇ 客户端下载</a>
   </header>
 
   <div class="alert danger" id="alertTraffic"><span>🔴</span><span id="alertTrafficText"></span></div>
@@ -103,6 +112,38 @@
   <section>
     <h2>移动端接入（WireGuard 门户）</h2>
     <div class="nodes" id="mobile"></div>
+  </section>
+
+  <section>
+    <h2>客户端下载</h2>
+    <div class="nodes">
+      <div class="node">
+        <b>各平台客户端</b>
+        <div style="color:var(--dim);font-size:12.5px;margin-top:4px">
+          EasyTier v2.6.4 官方版（与本组网节点同版本）· 断点续传 · 页面含 SHA-256 校验值
+        </div>
+        <div class="dlbtns">
+          <a class="btn" href="/dl/easytier-gui_2.6.4_x64-setup.exe">Windows</a>
+          <a class="btn" href="/dl/easytier-gui_2.6.4_aarch64.dmg">macOS M 芯片</a>
+          <a class="btn" href="/dl/easytier-gui_2.6.4_x64.dmg">macOS Intel</a>
+          <a class="btn" href="/dl/app-arm64-release.apk">Android</a>
+          <a class="btn line" href="/dl/" target="_blank" rel="noopener">全部文件 / 校验值 / 二维码 →</a>
+        </div>
+        <div style="color:var(--dim2);font-size:12px;margin-top:9px">
+          Windows / macOS / Android 用原生客户端即为 P2P 直连，<b>不计</b>公网节点流量费；下载文件本身按出网计费。
+        </div>
+      </div>
+      <div class="node">
+        <b>手机接入配置（WireGuard 门户）</b>
+        <div style="color:var(--dim);font-size:12.5px;margin-top:4px">
+          iOS 用：装 App Store 的 WireGuard，扫二维码或导入配置即可。⚠️ 此通道流量经公网节点，按 0.8 元/GB 计费。
+        </div>
+        <div class="dlbtns">
+          <a class="btn" href="/wg/qr.png" target="_blank" rel="noopener">二维码</a>
+          <a class="btn line" href="/wg/conf" download="kelp-wg.conf">配置文件</a>
+        </div>
+      </div>
+    </div>
   </section>
 
   <section>

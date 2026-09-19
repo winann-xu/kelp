@@ -642,6 +642,20 @@ def download_index(dl_dir: Path) -> str:
 </div>
 
 <div class="card">
+  <h2>面板证书（自签，可选导入）<span class="badge">消除浏览器警告</span></h2>
+  <div class="row">
+    <a class="btn" href="/dl/kelp-panel.crt" download="kelp-panel.crt">下载证书</a>
+    <b>kelp-panel.crt</b>
+    <span class="fname">导入并信任后，浏览器访问面板不再弹警告</span>
+  </div>
+  <div class="note" style="margin-top:8px">
+    <b>Windows</b>：双击 → 安装证书 → 本地计算机 → 受信任的根证书颁发机构<br>
+    <b>macOS</b>：双击 → 钥匙串访问 → 始终信任；或命令行 <code>security add-trusted-cert -r trustRoot -k ~/Library/Keychains/login.keychain-db kelp-panel.crt</code><br>
+    <b>iOS</b>：设置 → 通用 → VPN与设备管理 → 安装描述文件，再到「关于本机 → 证书信任设置」里打开
+  </div>
+</div>
+
+<div class="card">
   <h2>SHA-256 校验值</h2>
   {rows_sums or '<div class="row">—</div>'}
 </div>
