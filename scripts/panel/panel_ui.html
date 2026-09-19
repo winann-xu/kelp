@@ -77,6 +77,7 @@
          background:rgba(255,196,83,.12);border:1px solid rgba(255,196,83,.45);color:#ffdd9e;font-size:13.5px}
   .alert.show{display:flex}
   .alert b{color:#fff}
+  .alert.danger{background:rgba(255,93,108,.13);border-color:rgba(255,93,108,.5);color:#ffc4ca}
   .hint{margin-top:22px;font-size:12.5px;color:var(--dim2);line-height:1.7}
   .hint code{background:var(--bg2);border:1px solid var(--line);border-radius:6px;padding:1px 5px;font-size:12px}
   @media (max-width:560px){
@@ -94,6 +95,7 @@
     <span class="chip" id="hdTime">读取中…</span>
   </header>
 
+  <div class="alert danger" id="alertTraffic"><span>🔴</span><span id="alertTrafficText"></span></div>
   <div class="alert" id="alert"><span>⚠️</span><span><b>有流量正在走中继</b> —— 中继要花公网节点的出网流量（0.8 元/GB）。正常状态应全部是 P2P 直连，出现中继请排查 NAT/UDP/防火墙。</span></div>
   <div class="stats" id="stats"></div>
   <div class="grid" id="devices"><div class="empty">加载中…</div></div>
@@ -108,6 +110,7 @@
     · <b class="badge p2p">P2P 直连</b> 表示两台设备之间是点对点直连——不经过公网节点转发，<b>不产生流量费用</b>。<br>
     · <b class="badge relay">中继</b> 表示打洞失败、数据经公网节点转发——按出网流量计费（0.8 元/GB），出现即需排查。<br>
     · EasyTier 是去中心化网络，没有权威设备名册：本页"离线"是拿<code>期望设备清单</code>与各节点实时邻居表比对后判定的，并记录最后在线时间。<br>
+    · <b>今日/本月出网</b>统计的是公网节点的公网出方向字节（阿里云按出网流量计费 0.8 元/GB），超过阈值即弹红色横幅——这是 FR7 流量护栏。<br>
     · 面板只读：只查询各节点的 RPC（<code>easytier-cli -p &lt;addr&gt;:15888</code>），不向任何节点下发配置。
   </div>
 </div>
@@ -178,12 +181,19 @@ async function render() {
     $("hdTime").textContent = "更新 " + (s.generated_at || "—") + " · 每 " + (s.poll_interval || 5) + "s 自动刷新";
     $("hdDot").className = "dot " + (sum.online ? "ok" : "bad");
     $("alert").className = "alert" + ((sum.relay ?? 0) > 0 ? " show" : "");
+    const t = s.traffic || {};
+    $("alertTraffic").className = "alert danger" + (t.alert ? " show" : "");
+    $("alertTrafficText").innerHTML = t.alert
+      ? `<b>今日出网流量已超阈值</b> —— 今日 ${t.day} / 阈值 ${t.limit}，预估 ¥${t.day_cost}（${t.price_per_gb} 元/GB）。请检查是否有设备在走中继。`
+      : "";
     $("stats").innerHTML = [
       ["在线设备", `${sum.online ?? 0}<small>/ ${sum.expect_total ?? sum.total ?? 0} 台期望</small>`],
       ["P2P 直连", `${sum.p2p ?? 0}<small>条</small>`],
       ["中继", `${sum.relay ?? 0}<small>条（计费）</small>`],
       ["累计收", `${sum.rx_total ?? "—"}`],
       ["累计发", `${sum.tx_total ?? "—"}`],
+      ["今日出网", `${t.day ?? "—"}<small>约 ¥${t.day_cost ?? 0} · 阈值 ${t.limit ?? "—"}</small>`],
+      ["本月出网", `${t.month ?? "—"}<small>约 ¥${t.month_cost ?? 0}</small>`],
     ].map(([k, v]) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
     $("devices").innerHTML = (s.devices || []).length
       ? s.devices.map(deviceCard).join("")

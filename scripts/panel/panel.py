@@ -43,6 +43,10 @@ def load_config() -> dict:
     cfg.setdefault("poll_interval", 5)
     cfg.setdefault("cli_timeout", 6)
     cfg.setdefault("devices", [])
+    cfg.setdefault("traffic", {})
+    cfg["traffic"].setdefault("alert_gb_per_day", 5.0)
+    cfg["traffic"].setdefault("price_per_gb", 0.8)
+    cfg["traffic"].setdefault("state_file", "/var/lib/kelp/traffic.json")
     return cfg
 
 
@@ -148,6 +152,72 @@ def human_bytes(value: float) -> str:
             return f"{value:.0f} {unit}" if unit == "B" else f"{value:.2f} {unit}"
         value /= 1000
     return f"{value:.2f} TB"
+
+
+# ---------------------------------------------------------------- 流量护栏
+
+
+def read_egress_bytes() -> int:
+    """本机所有非 lo 接口的累计发出字节。阿里云按"公网出网流量"计费，故只看出方向。"""
+    total = 0
+    try:
+        for line in Path("/proc/net/dev").read_text().splitlines()[2:]:
+            name, _, rest = line.partition(":")
+            if not rest or name.strip() == "lo":
+                continue
+            fields = rest.split()
+            if len(fields) >= 9:
+                total += int(fields[8])  # tx bytes
+    except Exception:
+        return -1
+    return total
+
+
+def update_traffic(now: datetime) -> dict:
+    """统计"今日/本月"出网流量，超阈值即告警（FR7 流量护栏，替代云监控控制台）。"""
+    tr = CONFIG["traffic"]
+    path = Path(tr["state_file"])
+    state: dict = {}
+    if path.exists():
+        try:
+            state = json.loads(path.read_text())
+        except Exception:
+            state = {}
+    tx = read_egress_bytes()
+    if tx < 0:
+        return {"available": False}
+    day, month = now.strftime("%Y-%m-%d"), now.strftime("%Y-%m")
+    if state.get("day") != day:
+        state["day"] = day
+        state["day_base"] = state.get("last_tx", tx)
+    if state.get("month") != month:
+        state["month"] = month
+        state["month_base"] = state.get("last_tx", tx)
+    state.setdefault("day_base", tx)
+    state.setdefault("month_base", tx)
+    state["last_tx"] = tx
+    state["checked_at"] = now.isoformat(timespec="seconds")
+    day_bytes = max(0, tx - int(state["day_base"]))
+    month_bytes = max(0, tx - int(state["month_base"]))
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(state))
+    except Exception:
+        pass
+    limit_bytes = float(tr["alert_gb_per_day"]) * 1e9
+    price = float(tr["price_per_gb"])
+    return {
+        "available": True,
+        "day_bytes": day_bytes,
+        "month_bytes": month_bytes,
+        "day": human_bytes(day_bytes),
+        "month": human_bytes(month_bytes),
+        "limit": f"{tr['alert_gb_per_day']:g} GB/日",
+        "price_per_gb": price,
+        "day_cost": round(day_bytes / 1e9 * price, 2),
+        "month_cost": round(month_bytes / 1e9 * price, 2),
+        "alert": day_bytes > limit_bytes,
+    }
 
 
 def collect_node(node_conf: dict) -> dict:
@@ -262,6 +332,7 @@ def refresh_once() -> None:
             "summary": summary,
             "network": CONFIG.get("network_name", ""),
             "poll_interval": CONFIG["poll_interval"],
+            "traffic": update_traffic(datetime.now(CST)),
         })
 
 
