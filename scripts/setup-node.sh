@@ -28,7 +28,7 @@ while [[ $# -gt 0 ]]; do
     --hostname) HOSTNAME_="$2"; shift 2;;
     --ipv4) IPV4="$2"; shift 2;;
     --proxy-nets) PROXY_NETS="$2"; shift 2;;
-    --peer) PEER="$2"; shift 2;;
+    --peer|--peers) PEER="$2"; shift 2;;
     --rpc-whitelist) RPC_WHITELIST="$2"; shift 2;;
     --zip) ZIP="$2"; shift 2;;
     *) echo "未知参数: $1" >&2; exit 2;;
@@ -73,7 +73,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 EnvironmentFile=$ENV_FILE
-ExecStart=$BIN_DIR/easytier-core --network-name=\${KELP_NET_NAME} --network-secret=\${KELP_NET_SECRET} --hostname $HOSTNAME_ --ipv4 $IPV4 $PROXY_ARG --peer $PEER --rpc-portal 0.0.0.0:15888 $RPC_ARG
+ExecStart=$BIN_DIR/easytier-core --network-name=\${KELP_NET_NAME} --network-secret=\${KELP_NET_SECRET} --hostname $HOSTNAME_ --ipv4 $IPV4 $PROXY_ARG --peers $PEER --rpc-portal 0.0.0.0:15888 $RPC_ARG
 Restart=always
 RestartSec=3
 LimitNOFILE=1048576
@@ -90,9 +90,17 @@ systemctl enable --now easytier-node
 sleep 5
 
 echo "== 5/5 自检 =="
-systemctl is-active easytier-node
+STATE=$(systemctl is-active easytier-node || true)
+echo "服务状态: $STATE"
+if [[ "$STATE" != "active" ]]; then
+  echo "--- 启动失败，诊断信息 ---"
+  systemctl status easytier-node --no-pager -l 2>&1 | head -14
+  journalctl -u easytier-node -n 25 --no-pager 2>&1 | tail -25
+  exit 1
+fi
 ss -lntup 2>/dev/null | grep -E "11010|15888" || true
 "$BIN_DIR/easytier-cli" node 2>/dev/null | head -12 || true
-"$BIN_DIR/easytier-cli" peer -o json 2>/dev/null | head -c 400 || true
+echo "--- 邻居 ---"
+"$BIN_DIR/easytier-cli" peer 2>/dev/null | head -8 || true
 echo
 echo "完成。更换身份/参数：重跑本脚本即可（幂等）。"
