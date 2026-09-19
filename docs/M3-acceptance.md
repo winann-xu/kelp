@@ -1,6 +1,7 @@
-# M3 验收记录：手机接入（进行中 —— 待"安全组放行 + 真机蜂窝测试"）
+# M3 验收记录：手机接入（机器侧全部完成 ✅　仅剩"用户手机真机测试"）
 
-执行时间：2026-09-19 23:4x–23:5x　|　证据均为实测原始输出
+执行时间：2026-09-19 23:4x – 2026-09-20 00:2x　|　证据均为实测原始输出
+安全组 `11013/UDP`：用户已开通 → 已由**外部真客户端**实证可达（见 §2.5）
 
 ## 1. 方案选择（手机侧两条路）
 
@@ -56,6 +57,68 @@ wg show          → latest handshake: 3 seconds ago, transfer: 92 B received, 1
 - 卡片同时写明「此段流量计费 0.8 元/GB」，与 FR7 流量护栏呼应
 - 实测：测试客户端在线时面板显示 `count=1 / wg://127.0.0.1:42239`；断开后归零 ✅
 
+### 2.5 公网可达性实证（从外部机器用真 WireGuard 客户端接入 —— 2026-09-20 00:1x）
+
+自测点：`192.168.50.9`（Ubuntu 20.04 / 内核 5.15，真实外网出口）。为**零污染**，全程在**网络命名空间**内进行（不碰宿主路由、不碰海带组网路由），脚本：`scripts/diag-wg-portal-external.sh`
+
+```
+=== 1) 建命名空间 + veth + 出网 SNAT ===
+  netns → 宿主 veth: 通
+=== 2) 在命名空间内拉起 WireGuard 客户端（真走公网到 47.116.73.216:11013）===
+  peer: <PORTAL-PUBKEY-FROM-CLI>
+    endpoint: 47.116.73.216:11013
+    latest handshake: Now          ← 公网 UDP 11013 通（安全组确实放行）
+    transfer: 92 B received, 180 B sent
+=== 3) 经隧道访问两个站点 ===
+  B 站点·飞牛 NAS   200 0.131467s 4557B  标题: 飞牛 fnOS
+  A 站点·50.9        401 0.137184s 38B
+  隧道计数: 12712 B 收 / 4212 B 发
+=== 4) 宿主路由未被扰动 ===
+  宿主默认路由: default via 192.168.50.1 dev ens160 proto static metric 100   （与测试前一致）
+  veth 出现在宿主默认路由: 0
+=== 清理 ===
+  SNAT 规则已删 / FORWARD 规则已删 / netns 已删 / veth 已删
+  残留检查: netns=0  veth=0  WG路由=0          工具包已卸载（dpkg -P），模块已卸载
+```
+
+> 结论：**门户 + 安全组 + 公网路径三者均实证可用**，手机侧不再是"未知数"。
+> 附带发现（已记入 50.9 代理问题）：50.9 的 `apt` 也被死代理 `192.168.50.12:10809` 挡死（`E: 无法下载 … 连接失败 [IP: 192.168.50.12 10809]`），本次用 `curl --noproxy '*'` 直取 deb + `dpkg -i` 绕过。这再次印证：**该机任何走 http_proxy 的工具都是坏的**。
+
+### 2.6 客户端下载页（FR9 延伸 / 交付便利性）
+
+公网节点新增两条路径，**面板本体仍强制鉴权**：
+
+| 路径 | 鉴权 | 内容 |
+|---|---|---|
+| `https://47.116.73.216:18080/dl/` | **公开** | 各平台客户端下载页（含二维码、SHA-256 校验值） |
+| `https://47.116.73.216:18080/wg/conf`、`/wg/qr.png` | **需登录** | 手机 WireGuard 配置（含私钥）与二维码 |
+
+已托管文件（EasyTier v2.6.4，经 `ghfast.top` 取 GitHub 官方 Release，共 143 MB）：
+
+| 文件 | 用途 | 大小 |
+|---|---|---|
+| `easytier-gui_2.6.4_x64-setup.exe` | Windows 图形界面 | 10.4 MB |
+| `easytier-windows-x86_64-v2.6.4.zip` | Windows 命令行 | 31.1 MB |
+| `easytier-gui_2.6.4_aarch64.dmg` | macOS Apple 芯片 | 12.2 MB |
+| `easytier-gui_2.6.4_x64.dmg` | macOS Intel | 13.4 MB |
+| `app-arm64-release.apk` | Android 64 位 | 29.9 MB |
+| `app-arm-release.apk` | Android 32 位 | 21.4 MB |
+| `easytier-linux-x86_64-v2.6.4.zip` | Linux 节点/服务端 | 24.3 MB |
+
+实测：
+
+```
+HEAD /dl/easytier-gui_2.6.4_aarch64.dmg   → 200, Accept-Ranges: bytes
+Range: bytes=0-1048575 (APK)              → 206, 1048576 bytes（支持断点续传）
+Range: bytes=100-199                      → 206, 100 bytes
+完整下载 Windows 安装包（外网真实路径）    → 200, 10942975 bytes, 435643 B/s ≈ 3.5 Mbps
+  收到文件 sha256 前缀 0f92d378658fe5b5b150f6dbd06c0069… == 服务器声明值 ✅
+越权探测 /dl/../../etc/passwd             → 401（未泄露）
+/wg/conf 无凭据 → 401 ；有凭据 → 200 ✅
+```
+
+> ⚠️ **WireGuard 官方客户端安装包无法托管**：`download.wireguard.com`、`f-droid.org` 从国内及本机均不可达（实测超时/000），GitHub 上亦无官方 Release 资产。故下载页只给 App Store / Google Play / 官网链接，并明确标注「经公网节点 · 0.8 元/GB」。**Windows/macOS/Android 建议直接用 EasyTier 原生客户端（P2P，不计费）**，WireGuard 实际只为 iOS 服务。
+
 ## 3. 与任务书验收口径的偏差（需记录）
 
 任务书 M3 验收原写「`easytier-cli peer` 可见移动端节点」——该口径只对**原生客户端**成立。走 **WireGuard 门户**的手机**不会出现在 peer 列表**，而是出现在 `vpn-portal` 的 `connected_clients`（已接进面板）。故 M3 验收口径改为：
@@ -63,9 +126,9 @@ wg show          → latest handshake: 3 seconds ago, transfer: 92 B received, 1
 - 原生客户端：`easytier-cli peer` 可见移动端节点（10.144.144.30+）
 - WireGuard 门户客户端：面板「移动端接入」区块可见 + `easytier-cli vpn-portal` 的 connected_clients 非空
 
-## 4. 待用户执行（M3 收尾）
+## 4. 待用户执行（M3 收尾，仅剩真机）
 
-1. **阿里云安全组放行 `11013/UDP`**（TCP 不用开）——否则手机在蜂窝网络下连不上门户
+1. ~~阿里云安全组放行 `11013/UDP`~~ ✅ 已开通且已外部实证
 2. 手机装 WireGuard App → 扫 `~/kelp-run/wg-phone-qr.png` → 启用
 3. **关掉 Wi-Fi、用蜂窝数据**实测：打开 `https://192.168.1.99:5667`（飞牛 NAS 面板）与 `https://192.168.50.9`；SSH 侧可用 Termius 等连 `192.168.1.99:48032` 或 `192.168.50.9:22`
 4. 把结果告诉助手 → 助手核对面板「移动端接入」与 `vpn-portal` 输出，记录速率（用 `scripts/net-throughput-*.py` 从手机侧不适用，改由面板/门户流量计数核对）

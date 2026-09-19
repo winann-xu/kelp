@@ -25,6 +25,8 @@ from pathlib import Path
 
 CONFIG_PATH = Path(os.environ.get("KELP_PANEL_CONFIG", "/etc/kelp/panel.json"))
 UI_PATH = Path(os.environ.get("KELP_PANEL_UI", "/opt/kelp/panel_ui.html"))
+DOWNLOAD_DIR = Path(os.environ.get("KELP_DOWNLOAD_DIR", "/opt/kelp/downloads"))
+PRIVATE_DIR = Path(os.environ.get("KELP_PRIVATE_DIR", "/opt/kelp/private"))
 CLI = os.environ.get("KELP_EASYTIER_CLI", "/usr/local/bin/easytier-cli")
 CST = timezone(timedelta(hours=8))
 
@@ -423,10 +425,94 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", "0")
         self.end_headers()
 
+    # ------------------------------------------------------ 下载页（公开）
+
+    DL_TYPES = {".exe": "application/octet-stream", ".dmg": "application/octet-stream",
+                ".apk": "application/vnd.android.package-archive", ".zip": "application/zip",
+                ".png": "image/png", ".txt": "text/plain; charset=utf-8",
+                ".conf": "text/plain; charset=utf-8", ".html": "text/html; charset=utf-8"}
+
+    def serve_downloads(self, path: str) -> None:
+        rel = path[len("/dl"):].lstrip("/")
+        if not rel:
+            return self.reply(200, download_index(DOWNLOAD_DIR).encode("utf-8"),
+                              "text/html; charset=utf-8")
+        target = (DOWNLOAD_DIR / rel).resolve()
+        if not str(target).startswith(str(DOWNLOAD_DIR.resolve())) or not target.is_file():
+            return self.reply(404, b"not found", "text/plain; charset=utf-8")
+        ctype = self.DL_TYPES.get(target.suffix.lower(), "application/octet-stream")
+        size = target.stat().st_size
+
+        # 支持 Range（断点续传 / 手机浏览器分段下载）
+        start, end = 0, size - 1
+        partial = False
+        rng = self.headers.get("Range", "")
+        if rng.startswith("bytes="):
+            spec = rng[6:].split(",")[0].strip()
+            a, _, b = spec.partition("-")
+            if a.isdigit():
+                start = int(a)
+                if b.isdigit():
+                    end = min(int(b), size - 1)
+            elif b.isdigit():
+                start = max(0, size - int(b))
+            if 0 <= start <= end < size:
+                partial = True
+            else:
+                self.send_response(416)
+                self.send_header("Content-Range", f"bytes */{size}")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+
+        self.send_response(206 if partial else 200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Accept-Ranges", "bytes")
+        if partial:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        self.send_header("Content-Length", str(end - start + 1))
+        self.send_header("Content-Disposition", f'attachment; filename="{target.name}"')
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        if self.command == "HEAD":
+            return
+        remaining = end - start + 1
+        with target.open("rb") as fh:
+            fh.seek(start)
+            while remaining > 0:
+                chunk = fh.read(min(262144, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+                self.wfile.write(chunk)
+
+    def serve_private(self, path: str) -> None:
+        """鉴权区：WireGuard 手机配置与二维码（含私钥，必须认证后可见）"""
+        name = Path(path[len("/wg/"):]).name
+        target = PRIVATE_DIR / name
+        if not target.is_file():
+            return self.reply(404, b"not found", "text/plain; charset=utf-8")
+        ctype = self.DL_TYPES.get(target.suffix.lower(), "text/plain; charset=utf-8")
+        body = target.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+
+    def do_HEAD(self):  # noqa: N802  各写出函数均按 self.command 判断是否写正文
+        return self.do_GET()
+
     def do_GET(self):  # noqa: N802
+        path = self.path.split("?")[0]
+        if path == "/dl" or path.startswith("/dl/"):
+            return self.serve_downloads(path)
         if not self.authorized():
             return self.reject()
-        path = self.path.split("?")[0]
+        if path.startswith("/wg/"):
+            return self.serve_private(path)
         if path in ("/", "/index.html"):
             body = UI_PATH.read_bytes() if UI_PATH.exists() else b"<h1>UI missing</h1>"
             return self.reply(200, body, "text/html; charset=utf-8")
@@ -437,6 +523,154 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/healthz":
             return self.reply(200, b'{"ok":true}', "application/json")
         return self.reply(404, b"not found", "text/plain; charset=utf-8")
+
+
+DL_PAGE_CSS = """
+  :root{--bg:#080c18;--card:#141b2f;--card2:#1a2338;--line:#243050;--txt:#e8edf9;
+        --dim:#8d9ab5;--dim2:#67748f;--ok:#35e08b;--accent:#5b8cff;--warn:#ffc453}
+  *{box-sizing:border-box}
+  body{margin:0;padding:26px 16px 60px;background:radial-gradient(1000px 500px at 15% -10%,#16224a 0,transparent 60%),
+       radial-gradient(800px 420px at 110% 5%,#123a3a 0,transparent 55%),var(--bg);
+       color:var(--txt);font:15px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;min-height:100vh}
+  .wrap{max-width:900px;margin:0 auto}
+  h1{font-size:22px;margin:0 0 6px} h1 span{color:var(--accent)}
+  .sub{color:var(--dim);font-size:13.5px;margin-bottom:20px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 18px;margin-bottom:14px;
+        box-shadow:0 10px 30px rgba(0,0,0,.35)}
+  .card h2{font-size:16px;margin:0 0 4px;display:flex;align-items:center;gap:8px}
+  .badge{font-size:11.5px;border-radius:8px;padding:2px 8px;border:1px solid var(--line);color:var(--dim);background:var(--card2)}
+  .badge.p2p{color:#0a1a12;background:var(--ok);border-color:transparent;font-weight:650}
+  .badge.paid{color:#241c05;background:var(--warn);border-color:transparent;font-weight:650}
+  .row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0;border-top:1px dashed var(--line)}
+  .row:first-of-type{border-top:0}
+  .fname{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;color:var(--dim)}
+  .size{font-size:12px;color:var(--dim2);margin-left:auto}
+  a.btn{display:inline-flex;align-items:center;gap:6px;text-decoration:none;font-size:13.5px;font-weight:600;
+        color:#0a1a12;background:var(--ok);border-radius:10px;padding:7px 13px}
+  a.btn.alt{background:var(--accent);color:#06122b}
+  a.btn.line{background:transparent;border:1px solid var(--line);color:var(--txt);font-weight:500}
+  .note{margin-top:20px;color:var(--dim);font-size:13px}
+  .note code{background:var(--card2);border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:12.5px}
+  .sum{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--dim2);
+       margin-left:auto;word-break:break-all;max-width:62%;text-align:right}
+  .qr{display:flex;align-items:center;gap:14px}
+  .qr img{width:132px;height:132px;background:#fff;padding:6px;border-radius:10px}
+"""
+
+
+def human_size(n: float) -> str:
+    """1024 进制的人类可读大小。注意：每轮只除一次，别再在返回语句里除第二次。"""
+    for unit in ("B", "kB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1024
+    return f"{n:.1f} GB"
+
+
+def dl_row(label: str, filename: str, note: str = "") -> str:
+    f = DOWNLOAD_DIR / filename
+    if not f.is_file():
+        return ""
+    size = human_size(f.stat().st_size)
+    return (f'<div class="row"><a class="btn" href="/dl/{filename}">下载</a>'
+            f'<b>{label}</b><span class="fname">{filename}</span>'
+            f'<span class="size">{size}</span></div>')
+
+
+def download_index(dl_dir: Path) -> str:
+    rows_android = "".join([
+        dl_row("Android 64 位（绝大多数手机）", "app-arm64-release.apk"),
+        dl_row("Android 32 位（老设备备用）", "app-arm-release.apk"),
+    ])
+    rows_pc = "".join([
+        dl_row("Windows 图形界面（推荐）", "easytier-gui_2.6.4_x64-setup.exe"),
+        dl_row("Windows 命令行版（服务端 / 进阶）", "easytier-windows-x86_64-v2.6.4.zip"),
+        dl_row("macOS Apple 芯片（M 系列）", "easytier-gui_2.6.4_aarch64.dmg"),
+        dl_row("macOS Intel 芯片", "easytier-gui_2.6.4_x64.dmg"),
+    ])
+    rows_linux = "".join([
+        dl_row("Linux x86_64（命令行，节点 / 服务端用）", "easytier-linux-x86_64-v2.6.4.zip"),
+    ])
+    # SHA-256 校验值：读预生成的 SHA256SUMS（避免每次请求重算 140MB+ 哈希）
+    sums = []
+    sums_file = DOWNLOAD_DIR / "SHA256SUMS"
+    if sums_file.is_file():
+        for line in sums_file.read_text().splitlines():
+            parts = line.split(None, 1)
+            if len(parts) == 2:
+                sums.append(f'<div class="row"><span class="fname">{parts[1].strip().lstrip("*")}</span>'
+                            f'<span class="sum">{parts[0]}</span></div>')
+    rows_sums = "".join(sums) or f'<div class="row"><span class="fname">SHA256SUMS 尚未生成</span></div>'
+    return f"""<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>海带 · Kelp 客户端下载</title><style>{DL_PAGE_CSS}</style></head>
+<body><div class="wrap">
+<h1>海带 <span>·</span> Kelp 客户端下载</h1>
+<div class="sub">EasyTier v2.6.4（与组网节点同版本）· 镜像自 GitHub 官方 Release · 文件由本机直出</div>
+
+<div class="card">
+  <h2>手机 / 平板 <span class="badge p2p">P2P 直连</span><span class="badge">免费</span></h2>
+  <div class="row">
+    <a class="btn" href="/dl/app-arm64-release.apk">下载 APK</a>
+    <b>Android · EasyTier 原生客户端</b>
+    <span class="fname">app-arm64-release.apk</span>
+    <span class="size">{human_size((dl_dir / 'app-arm64-release.apk').stat().st_size) if (dl_dir / 'app-arm64-release.apk').is_file() else '—'}</span>
+  </div>
+  {rows_android or '<div class="row">文件准备中…</div>'}
+  <div class="row">
+    <a class="btn line" href="https://apps.apple.com/us/app/wireguard/id1441195209">App Store</a>
+    <b>iPhone / iPad · WireGuard</b><span class="fname">iOS 无独立安装包，走 App Store</span>
+    <span class="size">配置在面板 <code>/wg/conf</code> 取</span>
+  </div>
+  <div class="note" style="margin-top:8px">
+    · Android 装 APK 后，填入网络名与密钥即可（面板顶部品牌栏有名，密钥在部署会话中提供）。<br>
+    · iOS 用 WireGuard：在面板打开 <code>/wg/conf</code> 下载配置，或用 <code>/wg/qr.png</code> 扫码导入。
+  </div>
+</div>
+
+<div class="card">
+  <h2>电脑（Windows / macOS）<span class="badge p2p">P2P 直连</span><span class="badge">免费</span></h2>
+  {rows_pc or '<div class="row">文件准备中…</div>'}
+  <div class="note" style="margin-top:8px">Windows / macOS 用 EasyTier 原生客户端<b>不需要</b> WireGuard；原生客户端走 P2P，不计公网节点流量费。</div>
+</div>
+
+<div class="card">
+  <h2>Linux 节点 / 服务器 <span class="badge p2p">P2P 直连</span><span class="badge">免费</span></h2>
+  {rows_linux or '<div class="row">文件准备中…</div>'}
+  <div class="note" style="margin-top:8px">解包后 <code>easytier-core</code>（核心）+ <code>easytier-cli</code>（管理）；本机部署脚本见项目 <code>scripts/install-mesh-node.sh</code>。</div>
+</div>
+
+<div class="card">
+  <h2>SHA-256 校验值</h2>
+  {rows_sums or '<div class="row">—</div>'}
+</div>
+
+<div class="card">
+  <h2>WireGuard 官方客户端（备用通道）<span class="badge paid">经公网节点 · 0.8 元/GB</span></h2>
+  <div class="row"><a class="btn line" href="https://apps.apple.com/us/app/wireguard/id1441195209">App Store</a><b>iOS</b><span class="fname">官方站</span></div>
+  <div class="row"><a class="btn line" href="https://play.google.com/store/apps/details?id=com.wireguard.android">Google Play</a><b>Android</b><span class="fname">官方站</span></div>
+  <div class="row"><a class="btn line" href="https://www.wireguard.com/install/">wireguard.com/install</a><b>Windows / macOS / Linux</b>
+      <span class="fname">官方站（国内网络可能不可达）</span></div>
+  <div class="note" style="margin-top:8px">⚠️ WireGuard 门户的流量<b>全程经公网节点转发</b>，按出网 0.8 元/GB 计费（看一部 2GB 电影约 1.6 元）。大流量请优先用上面的原生客户端。</div>
+</div>
+
+<div class="card">
+  <div class="qr">
+    <img src="/dl/dl-url.png" alt="下载页二维码">
+    <div>
+      <b>手机扫码直接打开本页</b><br>
+      <span class="fname">https://47.116.73.216:18080/dl/</span>
+      <div class="note" style="margin-top:6px">证书是自签的：首次访问点「高级 → 继续前往」即可。</div>
+    </div>
+  </div>
+</div>
+
+<div class="note">
+  组网面板：<code>https://47.116.73.216:18080</code>（需登录，可看设备在线/延迟/中继与出网流量）<br>
+  项目档案：<code>~/01-project/07-kelp</code>（任务书 / checkpoint / 验收记录）
+</div>
+</div></body></html>"""
 
 
 def main() -> None:
