@@ -253,6 +253,16 @@ def collect_node(node_conf: dict) -> dict:
     return record
 
 
+COST_RANK = {"Local": 0, "p2p": 1, "-": 1}
+
+
+def cost_rank(cost: object) -> int:
+    """路径优劣排序：Local < p2p（含未知）< 中继等（越大越差，越需要暴露）。"""
+    if cost is None:
+        return 1
+    return COST_RANK.get(str(cost), 2)
+
+
 def merge_devices(nodes: list[dict]) -> tuple[list[dict], dict]:
     """把各节点视角的邻居表合并成统一设备列表（同一设备取最新指标）"""
     now = datetime.now(CST).strftime("%H:%M:%S")
@@ -265,11 +275,13 @@ def merge_devices(nodes: list[dict]) -> tuple[list[dict], dict]:
             item = by_ip.setdefault(ip, {"ipv4": ip, "hostname": peer["hostname"], "seen_by": []})
             item["hostname"] = item["hostname"] or peer["hostname"]
             item["seen_by"].append(node["name"])
-            if peer["cost"] != "Local" and item.get("cost") in (None, "Local"):
+            # 保守取值：只要有任一采集节点报告"更差"的路径（例如 relay），就用它覆盖。
+            # 原因：hub 通常看到的是 p2p，而两站点之间可能已在走中继（要计费），取最优会漏报。
+            if cost_rank(peer["cost"]) > cost_rank(item.get("cost")) or item.get("cost") is None:
                 item.update(peer)
+                item["cost_from"] = node["name"]
+            if peer["cost"] != "Local":
                 LAST_SEEN[ip] = now
-            elif "cost" not in item:
-                item.update(peer)
     devices = []
     for spec in CONFIG["devices"]:
         ip = spec.get("ipv4", "")
@@ -291,6 +303,7 @@ def merge_devices(nodes: list[dict]) -> tuple[list[dict], dict]:
             "tunnel": live.get("tunnel", "-"),
             "nat": live.get("nat", "-"),
             "version": live.get("version", "-"),
+            "cost_from": live.get("cost_from", ""),
             "last_seen": LAST_SEEN.get(ip, ""),
         })
     known = {d["ipv4"] for d in devices}

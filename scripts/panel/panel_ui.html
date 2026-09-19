@@ -110,6 +110,7 @@
     · <b class="badge p2p">P2P 直连</b> 表示两台设备之间是点对点直连——不经过公网节点转发，<b>不产生流量费用</b>。<br>
     · <b class="badge relay">中继</b> 表示打洞失败、数据经公网节点转发——按出网流量计费（0.8 元/GB），出现即需排查。<br>
     · EasyTier 是去中心化网络，没有权威设备名册：本页"离线"是拿<code>期望设备清单</code>与各节点实时邻居表比对后判定的，并记录最后在线时间。<br>
+    · 路径徽章取<b>各采集节点中最差的一条</b>：只要任意两台设备之间在走中继（如 NAS↔家里），就会显示"中继"——宁可保守，避免漏报计费路径。<br>
     · <b>今日/本月出网</b>统计的是公网节点的公网出方向字节（阿里云按出网流量计费 0.8 元/GB），超过阈值即弹红色横幅——这是 FR7 流量护栏。<br>
     · 面板只读：只查询各节点的 RPC（<code>easytier-cli -p &lt;addr&gt;:15888</code>），不向任何节点下发配置。
   </div>
@@ -121,11 +122,12 @@ const esc = (s) => (s ?? "").toString().replace(/[<>&"]/g, (c) => ({ "<": "&lt;"
 const shortVer = (v) => { const s = (v ?? "").toString(); const i = s.indexOf("-"); return i > 0 ? s.slice(0, i) : s; };
 
 function costBadge(d) {
+  const t = d.cost_from ? ` title="该路径由 ${esc(d.cost_from)} 采集（取各采集节点中最差的一条）"` : "";
   if (!d.online) return '<span class="badge bad">离线</span>';
-  if (d.cost === "p2p") return '<span class="badge p2p">P2P 直连</span>';
-  if (d.cost === "Local") return '<span class="badge local">本机</span>';
+  if (d.cost === "p2p") return `<span class="badge p2p"${t}>P2P 直连</span>`;
+  if (d.cost === "Local") return `<span class="badge local"${t}>本机</span>`;
   if (d.cost === "-") return '<span class="badge">未知</span>';
-  return '<span class="badge relay">中继 · 计费</span>';
+  return `<span class="badge relay"${t}>中继 · 计费</span>`;
 }
 
 function deviceCard(d) {
