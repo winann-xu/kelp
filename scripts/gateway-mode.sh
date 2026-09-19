@@ -22,6 +22,7 @@ SYSCTL_FILE=/etc/sysctl.d/99-kelp-gateway.conf
 UNIT=/etc/systemd/system/kelp-gateway.service
 SELF_PATH=/usr/local/sbin/kelp-gateway.sh
 LAN_IF=ens160                 # 站点内网接口（可用参数覆盖）
+LAN_CIDR=192.168.50.0/24      # 站点内网网段（SNAT 生效范围）
 TUN_IF=tun0                   # EasyTier 虚拟接口
 NS=kelptest                   # 自测网络命名空间
 VETH_HOST=kelp-t              # 自测 veth（网关机侧）
@@ -58,11 +59,13 @@ setup_ns() {
     return 0
 }
 
-run_test() {   # 输出 "ping结果|HTTP码"
-    local ping code
-    if ip netns exec "$NS" timeout 6 ping -c2 -W2 "$B_TARGET" >/dev/null 2>&1; then ping=ping通; else ping=ping不通; fi
-    code=$(ip netns exec "$NS" timeout 12 curl -sk -o /dev/null -w '%{http_code}' "$B_URL" 2>/dev/null)
-    printf '%s|%s' "$ping" "${code:-000}"
+run_test() {   # 输出 "小包ping|大包ping|TCP握手|HTTPS"
+    local icmp big tcp code
+    if ip netns exec "$NS" timeout 6 ping -c2 -W2 "$B_TARGET" >/dev/null 2>&1; then icmp=小包通; else icmp=小包不通; fi
+    if ip netns exec "$NS" timeout 8 ping -c2 -W2 -s 1400 "$B_TARGET" >/dev/null 2>&1; then big=大包通; else big=大包不通; fi
+    if ip netns exec "$NS" timeout 8 bash -c "echo > /dev/tcp/$B_TARGET/5667" >/dev/null 2>&1; then tcp=握手通; else tcp=握手不通; fi
+    code=$(ip netns exec "$NS" timeout 15 curl -sk -o /dev/null -w '%{http_code}' "$B_URL" 2>/dev/null)
+    printf '%s|%s|%s|%s' "$icmp" "$big" "$tcp" "${code:-000}"
 }
 
 selftest() {
@@ -70,11 +73,16 @@ selftest() {
     say "[自测] 模拟一台【未装 EasyTier 客户端】的设备：IP $FAKE_CIDR  网关 $GW_IP（本机）"
     say "       目标：$B_URL（B 站点飞牛 NAS）"
     if ! setup_ns; then say "  自测环境创建失败（缺 iproute2 / netns 支持）"; cleanup_ns; return 2; fi
+    say "  隧道 MTU: $TUN_IF=$(cat /sys/class/net/$TUN_IF/mtu 2>/dev/null || echo '?')  内网 MTU: $LAN_IF=$(cat /sys/class/net/$LAN_IF/mtu 2>/dev/null || echo '?')"
     local r; r=$(run_test)
-    say "  ping $B_TARGET : ${r%%|*}"
-    say "  curl $B_URL : HTTP ${r##*|}"
+    say "  ping $B_TARGET（56B）  : ${r%%|*}"
+    local rest=${r#*|}
+    say "  ping $B_TARGET（1400B）: ${rest%%|*}"
+    rest=${rest#*|}
+    say "  TCP 握手 $B_TARGET:5667 : ${rest%%|*}"
+    say "  https $B_URL : HTTP ${rest##*|}"
     cleanup_ns
-    if [[ "${r##*|}" == "200" ]]; then
+    if [[ "${rest##*|}" == "200" ]]; then
         say "  => 自测通过：免客户端设备已能访问 B 站点资源"
         return 0
     fi
@@ -84,7 +92,11 @@ selftest() {
 
 # ---------------------------------------------------------------- 规则
 have_rule() { iptables -C FORWARD "$@" >/dev/null 2>&1; }
-our_rules() { iptables -S FORWARD 2>/dev/null | grep -c 'KELP-GATEWAY'; }
+our_rules() {
+    { iptables -S FORWARD 2>/dev/null
+      iptables -t mangle -S FORWARD 2>/dev/null
+      iptables -t nat -S POSTROUTING 2>/dev/null; } | grep -c 'KELP-GATEWAY'
+}
 
 add_one() {
     have_rule "$@" && return 0
@@ -102,6 +114,20 @@ add_rules() {
         add_one -i "$TUN_IF" -o "$ifc" -m comment --comment "KELP-GATEWAY in" -j ACCEPT
     done
     add_one -m conntrack --ctstate RELATED,ESTABLISHED -m comment --comment "KELP-GATEWAY est" -j ACCEPT
+
+    # 关键①：SNAT。转发报文的源地址是内网私网地址，对端（异地站点）没有回程路由，
+    # 表现为"ICMP 能通（EasyTier 代答）但 TCP 全部不通"。必须把源改写成网关机自己的组网 IP。
+    # 在公网节点上实测：加 MASQUERADE 前 TCP 握手不通/HTTPS 失败，加后 TCP 通/HTTPS 200。
+    if ! iptables -t nat -C POSTROUTING -s "$LAN_CIDR" -o "$TUN_IF" -m comment --comment "KELP-GATEWAY nat" -j MASQUERADE >/dev/null 2>&1; then
+        iptables -t nat -I POSTROUTING 1 -s "$LAN_CIDR" -o "$TUN_IF" -m comment --comment "KELP-GATEWAY nat" -j MASQUERADE \
+            && say "  + [nat] SNAT：$LAN_CIDR -> 本机组网 IP（免客户端设备访问异地网的必要条件）"
+    fi
+
+    # 关键②：隧道 tun0 MTU 1360 < 内网 1500，钳制 MSS 避免大包（如 TLS 证书）被丢。
+    if ! iptables -t mangle -C FORWARD -p tcp --tcp-flags SYN,RST SYN -m comment --comment "KELP-GATEWAY mss" -j TCPMSS --clamp-mss-to-pmtu >/dev/null 2>&1; then
+        iptables -t mangle -I FORWARD 1 -p tcp --tcp-flags SYN,RST SYN -m comment --comment "KELP-GATEWAY mss" -j TCPMSS --clamp-mss-to-pmtu \
+            && say "  + [mangle] MSS 钳制到隧道 MTU（TCPMSS --clamp-mss-to-pmtu）"
+    fi
 }
 
 del_rules() {
@@ -111,6 +137,12 @@ del_rules() {
         del_one -i "$TUN_IF" -o "$ifc" -m comment --comment "KELP-GATEWAY in" -j ACCEPT
     done
     del_one -m conntrack --ctstate RELATED,ESTABLISHED -m comment --comment "KELP-GATEWAY est" -j ACCEPT
+    while iptables -t mangle -C FORWARD -p tcp --tcp-flags SYN,RST SYN -m comment --comment "KELP-GATEWAY mss" -j TCPMSS --clamp-mss-to-pmtu >/dev/null 2>&1; do
+        iptables -t mangle -D FORWARD -p tcp --tcp-flags SYN,RST SYN -m comment --comment "KELP-GATEWAY mss" -j TCPMSS --clamp-mss-to-pmtu
+    done
+    while iptables -t nat -C POSTROUTING -s "$LAN_CIDR" -o "$TUN_IF" -m comment --comment "KELP-GATEWAY nat" -j MASQUERADE >/dev/null 2>&1; do
+        iptables -t nat -D POSTROUTING -s "$LAN_CIDR" -o "$TUN_IF" -m comment --comment "KELP-GATEWAY nat" -j MASQUERADE
+    done
     say "  剩余海带规则条数 = $(our_rules)"
 }
 
