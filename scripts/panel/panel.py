@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import ssl
 import hmac
 import json
 import os
@@ -331,7 +332,15 @@ def main() -> None:
     refresh_once()
     threading.Thread(target=poller, daemon=True).start()
     srv = ThreadingHTTPServer((CONFIG["listen"], int(CONFIG["port"])), Handler)
-    print(f"kelp-panel listening on {CONFIG['listen']}:{CONFIG['port']} "
+    cert, key = CONFIG.get("tls_cert", ""), CONFIG.get("tls_key", "")
+    scheme = "http"
+    if cert and key and Path(cert).exists() and Path(key).exists():
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+        ctx.load_cert_chain(certfile=cert, keyfile=key)
+        srv.socket = ctx.wrap_socket(srv.socket, server_side=True)
+        scheme = "https"
+    print(f"kelp-panel listening on {scheme}://{CONFIG['listen']}:{CONFIG['port']} "
           f"({len(CONFIG['nodes'])} nodes / {len(CONFIG['devices'])} registered devices)", flush=True)
     srv.serve_forever()
 

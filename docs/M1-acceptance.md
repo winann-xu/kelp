@@ -63,7 +63,7 @@
 
 | 项 | 值 |
 |---|---|
-| 地址 | `http://47.116.73.216:18080`（用户/口令见 IAM 侧：`~/.config/kelp/kelp.env`，不入库） |
+| 地址 | `https://47.116.73.216:18080`（自签证书，SAN=IP，10 年；用户/口令见 `~/.config/kelp/kelp.env`，不入库） |
 | 实现 | `/opt/kelp/panel.py`（Python 标准库，无第三方依赖）+ `/opt/kelp/panel_ui.html`；systemd `kelp-panel.service`（Restart=always） |
 | 数据源 | 各节点 RPC：`easytier-cli -p <addr>:15888 -o json peer/node`，5s 一轮；**只读，不下发配置** |
 | 安全 | HTTP Basic 认证（sha256+salt，口令不落盘明文之外的日志）；未认证 401；已核验 API 响应**不含网络密钥**（`node.config` 字段被丢弃） |
