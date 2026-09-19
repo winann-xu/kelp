@@ -101,6 +101,11 @@
   <div class="grid" id="devices"><div class="empty">加载中…</div></div>
 
   <section>
+    <h2>移动端接入（WireGuard 门户）</h2>
+    <div class="nodes" id="mobile"></div>
+  </section>
+
+  <section>
     <h2>采集节点（RPC 数据源）</h2>
     <div class="nodes" id="nodes"></div>
   </section>
@@ -112,6 +117,7 @@
     · EasyTier 是去中心化网络，没有权威设备名册：本页"离线"是拿<code>期望设备清单</code>与各节点实时邻居表比对后判定的，并记录最后在线时间。<br>
     · 路径徽章取<b>各采集节点中最差的一条</b>：只要任意两台设备之间在走中继（如 NAS↔家里），就会显示"中继"——宁可保守，避免漏报计费路径。<br>
     · <b>今日/本月出网</b>统计的是公网节点的公网出方向字节（阿里云按出网流量计费 0.8 元/GB），超过阈值即弹红色横幅——这是 FR7 流量护栏。<br>
+    · <b>移动端接入</b>走公网节点的 WireGuard 门户：手机/平板的流量经公网节点转发到目标站点，因此**会产生计费流量**（0.8 元/GB），大流量传输建议用原生客户端（P2P 直连，不计费）。<br>
     · 面板只读：只查询各节点的 RPC（<code>easytier-cli -p &lt;addr&gt;:15888</code>），不向任何节点下发配置。
   </div>
 </div>
@@ -201,6 +207,16 @@ async function render() {
       ? s.devices.map(deviceCard).join("")
       : '<div class="empty">暂无设备</div>';
     $("nodes").innerHTML = (s.nodes || []).map(nodeCard).join("");
+    const mb = s.mobile || {};
+    const mbCards = [];
+    mbCards.push(`<div class="node">
+      <div class="hd"><span class="dot ${mb.count ? "ok" : ""}"></span>手机 / 平板</div>
+      ${mb.enabled ? "" : `<div class="kv"><span>状态</span><b>未启用门户</b></div>`}
+      <div class="kv"><span>在线接入</span><b>${mb.count ?? 0} 台</b></div>
+      ${(mb.clients || []).map((c) => `<div class="kv"><span>客户端</span><b class="addr">${esc(c.addr)}</b></div>`).join("")}
+      ${mb.enabled ? `<div class="err" style="color:var(--dim)">经公网节点接入：手机 → 公网节点 → 目标站点（此段流量计费 0.8 元/GB）</div>` : ""}
+    </div>`);
+    $("mobile").innerHTML = mbCards.join("");
   } catch (e) {
     $("hdTime").textContent = "读取失败：" + e.message;
     $("hdDot").className = "dot bad";

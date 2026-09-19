@@ -138,6 +138,17 @@ def parse_metrics(peer: dict) -> dict:
     }
 
 
+def collect_portal(rpc: str, record: dict) -> None:
+    """采集 WireGuard 门户的已接入客户端。注意：client_config 内含客户端私钥，绝不外传。"""
+    ok, info = run_cli(rpc, "vpn-portal")
+    if not ok or not isinstance(info, dict):
+        record["portal"] = {"ok": False, "error": str(info)[:120]}
+        return
+    clients = [str(c) for c in (info.get("connected_clients") or [])]
+    record["portal"] = {"ok": True, "type": str(info.get("vpn_type", "wireguard")),
+                        "count": len(clients), "clients": clients[:20]}
+
+
 def human_rate(text: str) -> float:
     m = re.match(r"([0-9.]+) ?([kMG]?)B", text.strip())
     if not m:
@@ -229,6 +240,7 @@ def collect_node(node_conf: dict) -> dict:
         "name": name,
         "rpc": rpc,
         "note": node_conf.get("note", ""),
+        "portal_enabled": bool(node_conf.get("vpn_portal")),
         "hostname": node_conf.get("hostname", ""),
         "online": False,
         "error": "",
@@ -333,7 +345,12 @@ def merge_devices(nodes: list[dict]) -> tuple[list[dict], dict]:
 
 
 def refresh_once() -> None:
-    nodes = [collect_node(n) for n in CONFIG["nodes"]]
+    nodes = []
+    for n in CONFIG["nodes"]:
+        rec = collect_node(n)
+        if n.get("vpn_portal"):
+            collect_portal(n.get("rpc", ""), rec)
+        nodes.append(rec)
     devices, summary = merge_devices(nodes)
     summary["rx_total"] = human_bytes(summary["rx_total"])
     summary["tx_total"] = human_bytes(summary["tx_total"])
@@ -346,7 +363,19 @@ def refresh_once() -> None:
             "network": CONFIG.get("network_name", ""),
             "poll_interval": CONFIG["poll_interval"],
             "traffic": update_traffic(datetime.now(CST)),
+            "mobile": mobile_summary(nodes),
         })
+
+
+def mobile_summary(nodes: list[dict]) -> dict:
+    clients: list[dict] = []
+    for n in nodes:
+        portal = n.get("portal") or {}
+        if not portal.get("ok"):
+            continue
+        for c in portal.get("clients", []):
+            clients.append({"via": n.get("name", ""), "addr": c})
+    return {"count": len(clients), "clients": clients, "enabled": any(n.get("portal_enabled") for n in nodes)}
 
 
 def poller() -> None:
