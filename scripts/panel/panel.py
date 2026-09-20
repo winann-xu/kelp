@@ -682,6 +682,17 @@ def download_index(dl_dir: Path) -> str:
 </div>
 
 <div class="card">
+  <h2>装好后打不开？<span class="badge">macOS / Windows 常见拦截</span></h2>
+  <div class="note" style="margin-top:2px">
+    <b>macOS 提示"已损坏，无法打开"</b>——这不是文件坏了（可用上面的 SHA-256 核对），而是应用<b>未做苹果公证</b>（adhoc 签名），被 Gatekeeper 拦下。二选一：<br>
+    · 命令行（推荐，一次搞定）：<code>xattr -dr com.apple.quarantine /Applications/easytier-gui.app</code><br>
+    · 图形界面：系统设置 → 隐私与安全性 → 拉到最下面点"仍要打开"<br>
+    <b>Windows 提示 SmartScreen</b>：点"更多信息 → 仍要运行"。<br>
+    <b>手机</b>：Android 需允许"安装未知来源应用"；iOS 无独立安装包（EasyTier iOS 在外区 App Store，或直接用 WireGuard）。
+  </div>
+</div>
+
+<div class="card">
   <h2>SHA-256 校验值</h2>
   {rows_sums or '<div class="row">—</div>'}
 </div>
