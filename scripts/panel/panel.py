@@ -35,6 +35,12 @@ STATE: dict = {"generated_at": None, "nodes": [], "devices": [], "summary": {}}
 STATE_LOCK = threading.Lock()
 LAST_SEEN: dict[str, str] = {}
 
+# 省流量：无人访问时不再经组网去问远端节点的 RPC（空转出网 = 公网节点计费）
+# 本机(127.0.0.1)节点始终刷新——它不产生公网流量
+IDLE_AFTER = float(os.environ.get("KELP_IDLE_AFTER", "120"))
+VIEWERS = {"last": time.time()}
+LAST_REC: dict = {}
+
 # ---------------------------------------------------------------- 配置
 
 
@@ -346,12 +352,24 @@ def merge_devices(nodes: list[dict]) -> tuple[list[dict], dict]:
     return devices, summary
 
 
-def refresh_once() -> None:
+def refresh_once(force: bool = False) -> None:
+    idle = (not force) and (time.time() - VIEWERS["last"]) > IDLE_AFTER
     nodes = []
     for n in CONFIG["nodes"]:
+        key = str(n.get("key", n.get("name", "")))
+        rpc = str(n.get("rpc", ""))
+        is_local = rpc.startswith("127.0.0.1") or rpc.startswith("localhost")
+        if idle and not is_local and key in LAST_REC:
+            # 无人看页面：远端节点沿用上次结果，省下公网出网流量
+            rec = dict(LAST_REC[key])
+            rec["stale"] = True
+            nodes.append(rec)
+            continue
         rec = collect_node(n)
         if n.get("vpn_portal"):
-            collect_portal(n.get("rpc", ""), rec)
+            collect_portal(rpc, rec)
+        rec["stale"] = False
+        LAST_REC[key] = rec
         nodes.append(rec)
     devices, summary = merge_devices(nodes)
     summary["rx_total"] = human_bytes(summary["rx_total"])
@@ -514,9 +532,17 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/wg/"):
             return self.serve_private(path)
         if path in ("/", "/index.html"):
+            VIEWERS["last"] = time.time()
             body = UI_PATH.read_bytes() if UI_PATH.exists() else b"<h1>UI missing</h1>"
             return self.reply(200, body, "text/html; charset=utf-8")
         if path == "/api/status":
+            was_idle = (time.time() - VIEWERS["last"]) > IDLE_AFTER
+            VIEWERS["last"] = time.time()
+            if was_idle:
+                try:
+                    refresh_once(force=True)   # 有人来了：立刻取一次最新数据，避免首屏是旧值
+                except Exception:
+                    pass
             with STATE_LOCK:
                 payload = json.dumps(STATE, ensure_ascii=False).encode("utf-8")
             return self.reply(200, payload, "application/json; charset=utf-8")
