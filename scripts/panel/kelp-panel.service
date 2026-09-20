@@ -1,0 +1,17 @@
+[Unit]
+Description=Kelp Panel (read-only EasyTier dashboard)
+After=network-online.target easytier.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=KELP_PANEL_CONFIG=/etc/kelp/panel.json
+Environment=KELP_PANEL_UI=/opt/kelp/panel_ui.html
+ExecStart=/usr/bin/python3 /opt/kelp/panel.py
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
