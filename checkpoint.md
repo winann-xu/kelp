@@ -127,6 +127,9 @@
 - [x] ~~待确认设备 `10.144.144.4`~~ → 用户确认是其本人 Windows 电脑（面板名册已改名"Windows 电脑（家里台式机）"）
 - [x] ~~项目收尾清理~~ → 见下方「收尾完成清单」
 - [x] ~~GitHub 远端仓库~~ → 已建 **公开** 仓库（见日志；仓库内已复检无凭据/密钥/网络密钥）
+- [ ] **在 50.9 跑一次面板授权安装器**（一次 sudo 口令，之后换密钥即可全程在 web 完成）：
+      `cd ~/01-project/07-kelp && scp scripts/kelp-apply-secret.sh scripts/50-9-enable-agent-access.sh winann@192.168.50.9:/tmp/ && ssh -t winann@192.168.50.9 'sudo bash /tmp/50-9-enable-agent-access.sh'`
+      该脚本同时会 **拉起 `kelp-gateway` 单元并跑一次免客户端自测**，把下面那项一起收掉。
 - [ ] ⚠️ **唯一剩余需要 root 的收尾项**：在 50.9 执行一次
       `sudo systemctl start kelp-gateway && sudo bash /usr/local/sbin/kelp-gateway.sh selftest`
       目的：验证 FR6「开机自恢复单元」这条路径真的能跑通（单元 enabled 但自 8-29 开机以来从未 start 过；规则目前是 M4 的 apply 直接落地的）。
@@ -154,6 +157,7 @@
 
 ## 日志
 
+- 2026-09-20 13:5x **面板「管理」页（用户要求：想在 web 上改密码）**：新增 `/admin`（顶栏「⚙ 管理」入口）两个可写动作，其余仍只读。① **改面板口令**：新 salt+sha256 写回 `/etc/kelp/panel.json`（改前备份）→ 面板自我重启（延迟 3 秒，先把响应发出去）；② **轮换网络密钥**：hub（本地）→ A 站点 50.9（hub→50.9 用新生成的 `id_ed25519_kelp` 公钥 + **限定范围 sudo 白名单** 调 `kelp-apply-secret.sh`）→ hub 重启 → 校验对端回来 → **最后**重建 B 站点容器（hub→NAS 因 fnOS 的 `/home/admin` 不存在无法用公钥，改用 hub 上 600 的 `/etc/kelp/nas-access.env`）→ 刷新门户配置。**踩坑**：重建 B 站点容器会掐断 hub→NAS 的隧道（SSH 正是穿过该容器转发的），同步等结果必然超时 → 改为 `setsid` 派生 + 轮询容器状态与容器内密钥前缀；fnOS 重建实测要 ~5 分钟，故 NAS 放最后且窗口放到 10 分钟。实现细节：新增 `scripts/panel/panel_admin.py`（面板 <500 行仍保持，逻辑独立成模块）、`scripts/kelp-apply-secret.sh`（50.9 上的根所有辅助脚本）、`scripts/50-9-enable-agent-access.sh`（一次性授权安装器，含 `visudo -c` 校验）。**本地已做**：单元测试 + 本地 HTTP 集成测试（鉴权/错误口令/非法密钥/同值拦截/NAS 不可达快速中止）+ hub 上幂等演练（同名密钥跑全流程）。**待用户**：在 50.9 跑一次安装器（需要他输一次 sudo 口令）→ 之后 A 站点这一腿才可自动化；当前 `/admin` 换密钥会**预检拦截**并给出该命令，零改动。
 - 2026-09-20 13:2x **收尾收口（用户三次确认）**：① 那个反复上下线的 `10.144.144.2 localhost` **就是用户的手机**（EasyTier App 里没填虚拟 IP → 自动分配 .2；已登记名册「我的手机（App 自动分配）」，`.30` 那条改为备用说明）—— 这也解释了本轮观察到的 `relay(2)` 计数来源（site-b 视角对手机是中继、0 B 流量）；M3 验收表的"路径"一格据此补齐（hub/A 站点 p2p、B 站点 relay）；② 就"仓库已公开"问用户是否换强随机密钥 → 用户答复**由他本人设定密钥**，已把 `scripts/rotate-network-secret.sh` 重写为一键三节点同步（含：NAS **重建容器**而非 restart、50.9 改交互式 sudo、轮换后自动重跑门户配置刷新、`DRY_RUN=1` 干跑模式），脚本内零明文、跑完打印回滚路径与"手机/ Mac / Windows 客户端需手改密钥"提醒；③ 用户选择 **MIT 许可证** → 已加 `LICENSE`（Copyright 2026 winann-xu）并推送。
 - 2026-09-20 13:1x **项目收尾轮（用户回报 M3 真机通过）**：① 用户回报 **手机蜂窝实测正常**（两站点均可打开）+ 面板浏览器正常 + 确认 `10.144.144.4` 是其本人的 Windows 电脑 → **M3 验收通过，五个里程碑全部 ✅**；② 面板名册 `10.144.144.4` 更名为「Windows 电脑（家里台式机）」并重启面板；③ **收尾清理**：50.9 删免密 sudo（`/etc/sudoers.d/kelp-agent`）、清 `/tmp` 与 `/root` 临时脚本/旧密钥留档（保留 `proxy-backup-*` 还原备份）；hub 清 `/tmp`、`/root/kelp-secret-old.*`（保留 `/etc/easytier/kelp.env.bak.*` 回滚材料）；本机 `~/kelp-run/` 由 123 MB 收敛到仅 `wg-phone-qr.png`(600) + `CLEANUP.md`（可复用脚本收编进 `scripts/`：`rotate-network-secret.sh`、`watch-relay.py`、`panel/kelp-panel.service`）；Mac 钥匙串 `kelp-panel` 信任按需**保留**（浏览器免警告访问面板所需）；④ **复查发现一处文档与事实不符**：`kelp-gateway.service` 单元自 8-29 开机以来从未 start 过（规则是 M4 的 apply 直接落地的）→ 已更正记录，并把"跑一次 `systemctl start kelp-gateway` + `selftest`"列为唯一剩余需 root 的收尾项（免密 sudo 已删，改由用户执行）；⑤ 建 **公开** GitHub 远端仓库并推送；推送前复检：仓库与**全部历史**均无网络密钥、各机口令、密码哈希与私钥（`git log --all -S` 逐值验证 0 命中），证据截图也逐张目视确认无敏感信息。
 

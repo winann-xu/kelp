@@ -23,6 +23,9 @@ from datetime import datetime, timezone, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from panel_admin import (ADMIN_HTML, change_panel_password, current_secret, rotate_secret,
+                         validate_password, validate_secret, verify_password)
+
 CONFIG_PATH = Path(os.environ.get("KELP_PANEL_CONFIG", "/etc/kelp/panel.json"))
 UI_PATH = Path(os.environ.get("KELP_PANEL_UI", "/opt/kelp/panel_ui.html"))
 DOWNLOAD_DIR = Path(os.environ.get("KELP_DOWNLOAD_DIR", "/opt/kelp/downloads"))
@@ -443,6 +446,67 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", "0")
         self.end_headers()
 
+    # ------------------------------------------------------ 管理动作（可写）
+
+    def read_json(self) -> dict:
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            return {}
+        if length <= 0 or length > 8192:
+            return {}
+        try:
+            raw = self.rfile.read(length)
+            return json.loads(raw.decode("utf-8"))
+        except Exception:
+            return {}
+
+    def json_reply(self, payload: dict, code: int = 200) -> None:
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_POST(self):  # noqa: N802
+        path = self.path.split("?")[0]
+        if not self.authorized():
+            return self.reject()
+        if path not in ("/admin/password", "/admin/secret"):
+            return self.reply(404, b"not found", "text/plain; charset=utf-8")
+
+        data = self.read_json()
+        user = CONFIG.get("auth", {}).get("user", "")
+        # 表单里必须带当前口令：既是二次确认，也顺带挡掉跨站表单伪造
+        given = data.get("old_password") or data.get("password") or ""
+        if not verify_password(user, given):
+            return self.json_reply({"ok": False, "error": "当前口令不正确"}, 403)
+
+        if path == "/admin/password":
+            new_pw = str(data.get("new_password", ""))
+            err = validate_password(new_pw)
+            if err:
+                return self.json_reply({"ok": False, "error": err}, 400)
+            if new_pw == given:
+                return self.json_reply({"ok": False, "error": "新口令与当前口令相同"}, 400)
+            try:
+                return self.json_reply(change_panel_password(new_pw))
+            except Exception as exc:
+                return self.json_reply({"ok": False, "error": f"写入配置失败: {exc}"}, 500)
+
+        new_secret = str(data.get("new_secret", ""))
+        err = validate_secret(new_secret)
+        if err:
+            return self.json_reply({"ok": False, "error": err}, 400)
+        if new_secret == current_secret():
+            return self.json_reply({"ok": False, "error": "新密钥与当前相同"}, 400)
+        try:
+            return self.json_reply(rotate_secret(new_secret))
+        except Exception as exc:
+            return self.json_reply({"ok": False, "error": f"轮换失败: {exc}"}, 500)
+
     # ------------------------------------------------------ 下载页（公开）
 
     DL_TYPES = {".exe": "application/octet-stream", ".dmg": "application/octet-stream",
@@ -546,6 +610,8 @@ class Handler(BaseHTTPRequestHandler):
             with STATE_LOCK:
                 payload = json.dumps(STATE, ensure_ascii=False).encode("utf-8")
             return self.reply(200, payload, "application/json; charset=utf-8")
+        if path == "/admin":
+            return self.reply(200, ADMIN_HTML.encode("utf-8"), "text/html; charset=utf-8")
         if path == "/healthz":
             return self.reply(200, b'{"ok":true}', "application/json")
         return self.reply(404, b"not found", "text/plain; charset=utf-8")
