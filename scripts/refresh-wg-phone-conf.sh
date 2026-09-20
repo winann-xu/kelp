@@ -11,7 +11,13 @@ PANEL_USER=$(sed -n 's/^KELP_PANEL_USER=//p' "$ENVF" | head -1)
 PANEL_PASS=$(sed -n 's/^KELP_PANEL_PASS=//p' "$ENVF" | head -1)
 [[ -n "$PANEL_USER" && -n "$PANEL_PASS" ]] || { say "$ENVF 里缺 KELP_PANEL_USER/PASS"; exit 1; }
 
-export SSHPASS='<REDACTED-PANEL-PASS>'
+### 凭据：只从 600 文件读，绝不写进脚本 ####################################
+CREDF="$HOME/.config/kelp/creds.env"
+[[ -f $CREDF ]] || { say "缺少 $CREDF（各机登录凭据）"; exit 1; }
+# shellcheck disable=SC1090
+. "$CREDF"
+: "${KELP_VPS_PASS:?creds.env 里缺 KELP_VPS_PASS}"
+export SSHPASS="$KELP_VPS_PASS"
 say "=== 1) 从门户取最新客户端配置 ==="
 RAW=$(sshpass -e ssh -o StrictHostKeyChecking=no -o NumberOfPasswordPrompts=1 "$VPS" \
   'easytier-cli -p 127.0.0.1:15888 vpn-portal 2>/dev/null' | sed -n '/client_config_start/,/client_config_end/p')
