@@ -51,6 +51,7 @@
 - **浏览器可达性 ≠ curl 可达性**：`curl -k` 会完全遮住证书链问题；验证浏览器要嘛不带 `-k`、要嘛用浏览器引擎（`scripts/check-panel-in-browser.sh` 用 WKWebView，且**鉴权页必须带凭据**，否则会得到 `-1001` 假阴性）。
 - **代理环境变量造成的假故障**：测试组网/内网目标必须 `--noproxy '*'`，否则一个挂掉的 `http_proxy` 会让所有探测显示"不通"。
 - **`docker restart` 不重读 `--env-file`**；**hub 重启会让 WireGuard 门户密钥重生成**（手机配置失效，需重跑刷新脚本）。
+- **bash 在 UTF-8 locale 下会把全角字符当成变量名的一部分**：`$VAR（中文）` 会报 `unbound variable`，脚本里一律写 `${VAR}`（本项目 `scripts/rotate-network-secret.sh` 就踩过）。
 - **公网节点是硬单点**：实测停掉后 3 秒内两站点间全部中断（含原本 P2P 直连的节点），重启 15 秒恢复。
 
 ## 凭据纪律
@@ -62,6 +63,10 @@
 ~/.config/kelp/creds.env    # 各机 SSH 登录口令（脚本用）
 ~/.config/kelp/wg-phone.conf# 手机 WireGuard 配置（含私钥）
 ```
+
+## 许可证
+
+[MIT](LICENSE)（Copyright 2026 winann-xu）。第三方组件：EasyTier 为 Apache-2.0。
 
 ## 文档导航
 

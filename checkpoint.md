@@ -131,6 +131,8 @@
       `sudo systemctl start kelp-gateway && sudo bash /usr/local/sbin/kelp-gateway.sh selftest`
       目的：验证 FR6「开机自恢复单元」这条路径真的能跑通（单元 enabled 但自 8-29 开机以来从未 start 过；规则目前是 M4 的 apply 直接落地的）。
       说明：本轮已按收尾要求撤销 50.9 的免密 sudo（`/etc/sudoers.d/kelp-agent` 已删），agent 无法再自行执行；用户跑一次即可，跑完把输出贴回来我再补文档。
+- [ ] **换强随机网络密钥（用户自己设值）**：`NEW_SECRET='你的密钥' bash scripts/rotate-network-secret.sh`（仓库已公开，短密钥建议换掉；换完手机 App、Mac/Windows GUI 里的密钥要手改）
+- [x] ~~开源许可证~~ → MIT（`LICENSE`，Copyright 2026 winann-xu）
 - [ ] 加固（可选）：hub 的 journal 会打印含 `network_secret` 的启动配置 → 下次**计划内**重启 hub 时顺手加 `--console-log-level warn`（⚠️ 别单独重启：会让 WireGuard 门户密钥重生成、手机配置失效）
 - [ ] 可选：第二台公网节点消单点 / 调高 ECS 带宽 / 把 Mac、Windows 的组网 IP 固定成 FR5 计划值
 
@@ -152,6 +154,7 @@
 
 ## 日志
 
+- 2026-09-20 13:2x **收尾收口（用户三次确认）**：① 那个反复上下线的 `10.144.144.2 localhost` **就是用户的手机**（EasyTier App 里没填虚拟 IP → 自动分配 .2；已登记名册「我的手机（App 自动分配）」，`.30` 那条改为备用说明）—— 这也解释了本轮观察到的 `relay(2)` 计数来源（site-b 视角对手机是中继、0 B 流量）；M3 验收表的"路径"一格据此补齐（hub/A 站点 p2p、B 站点 relay）；② 就"仓库已公开"问用户是否换强随机密钥 → 用户答复**由他本人设定密钥**，已把 `scripts/rotate-network-secret.sh` 重写为一键三节点同步（含：NAS **重建容器**而非 restart、50.9 改交互式 sudo、轮换后自动重跑门户配置刷新、`DRY_RUN=1` 干跑模式），脚本内零明文、跑完打印回滚路径与"手机/ Mac / Windows 客户端需手改密钥"提醒；③ 用户选择 **MIT 许可证** → 已加 `LICENSE`（Copyright 2026 winann-xu）并推送。
 - 2026-09-20 13:1x **项目收尾轮（用户回报 M3 真机通过）**：① 用户回报 **手机蜂窝实测正常**（两站点均可打开）+ 面板浏览器正常 + 确认 `10.144.144.4` 是其本人的 Windows 电脑 → **M3 验收通过，五个里程碑全部 ✅**；② 面板名册 `10.144.144.4` 更名为「Windows 电脑（家里台式机）」并重启面板；③ **收尾清理**：50.9 删免密 sudo（`/etc/sudoers.d/kelp-agent`）、清 `/tmp` 与 `/root` 临时脚本/旧密钥留档（保留 `proxy-backup-*` 还原备份）；hub 清 `/tmp`、`/root/kelp-secret-old.*`（保留 `/etc/easytier/kelp.env.bak.*` 回滚材料）；本机 `~/kelp-run/` 由 123 MB 收敛到仅 `wg-phone-qr.png`(600) + `CLEANUP.md`（可复用脚本收编进 `scripts/`：`rotate-network-secret.sh`、`watch-relay.py`、`panel/kelp-panel.service`）；Mac 钥匙串 `kelp-panel` 信任按需**保留**（浏览器免警告访问面板所需）；④ **复查发现一处文档与事实不符**：`kelp-gateway.service` 单元自 8-29 开机以来从未 start 过（规则是 M4 的 apply 直接落地的）→ 已更正记录，并把"跑一次 `systemctl start kelp-gateway` + `selftest`"列为唯一剩余需 root 的收尾项（免密 sudo 已删，改由用户执行）；⑤ 建 **公开** GitHub 远端仓库并推送；推送前复检：仓库与**全部历史**均无网络密钥、各机口令、密码哈希与私钥（`git log --all -S` 逐值验证 0 命中），证据截图也逐张目视确认无敏感信息。
 
 - 2026-09-20 11:1x **Agent 自主复验轮**：① **面板浏览器可达性复验（补严 §2.7）** —— 上次验证的是公开 `/dl/`，本次补测鉴权面板本体：`curl`（不带 `-k`，走系统信任链）200；WKWebView（Safari 引擎）**带凭据**打开 `/` **3/3 成功**、标题与 `在线/设备` 区块正常；钥匙串已有 `kelp@47.116.73.216` 条目；**新坑**：WKWebView 测鉴权页不带凭据只会干等成 `-1001`（工具假阴性，非浏览器问题）→ 产出 `scripts/check-panel-in-browser.sh`；② **本机 Mac 已作客户端接入**（EasyTier GUI，`utun6=10.144.144.3`）：经组网 NAS `200/0.078s`、50.9 `401/0.024s`，默认网关未动 ⇒ 原 D12「Mac 节点后置」作废；③ **面板名册**新增 `我的 Mac`、`Windows 电脑（待确认）`（`expect=false`），改 `/etc/kelp/panel.json` 后重启面板；④ **状态快照**：在线 5/6（手机未接入）、**连续 5 轮全 P2P（中继 0，NAS↔50.9 p2p 17.4ms，此前 relay(2) 回落未复现）**、今日出网 271.8 MB ≈ 0.22 元；⑤ **安全观察**：公网 11010 收到外部扫描（沈阳 `123.245.84.175` 10:16 握手失败，`private_mode` 挡住）；⑥ **凭据收口**：新建 600 文件 `~/.config/kelp/creds.env`（各机登录口令），把 `~/kelp-run/*.sh` 与任务书附录里的明文口令全部改为变量引用（含修复因打码而失效的 `scripts/refresh-wg-phone-conf.sh`）；⑦ 文档同步：任务书 v1.3 + D28–D30、`docs/M3-acceptance.md §6`。
