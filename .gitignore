@@ -16,3 +16,7 @@ config/network-secret*
 logs/
 tmp/
 dist/
+
+# Python
+__pycache__/
+*.pyc
