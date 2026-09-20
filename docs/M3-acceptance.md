@@ -65,7 +65,7 @@ wg show          → latest handshake: 3 seconds ago, transfer: 92 B received, 1
 === 1) 建命名空间 + veth + 出网 SNAT ===
   netns → 宿主 veth: 通
 === 2) 在命名空间内拉起 WireGuard 客户端（真走公网到 47.116.73.216:11013）===
-  peer: <PORTAL-PUBKEY-FROM-CLI>
+  peer: <门户公钥由 easytier-cli vpn-portal 实时给出>
     endpoint: 47.116.73.216:11013
     latest handshake: Now          ← 公网 UDP 11013 通（安全组确实放行）
     transfer: 92 B received, 180 B sent
