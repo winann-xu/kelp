@@ -45,12 +45,28 @@
 | 密钥轮换 | `scripts/rotate-network-secret.sh` | 三节点同步换网络密钥（含备份与回滚材料） |
 | 回滚手册 | [docs/rollback.md](docs/rollback.md) | 每个组件都有停止/卸载路径 |
 
+## 面板「管理」页（唯一的可写入口）
+
+`https://<hub>:18080/admin`（需登录，且每次动作都要再次输入当前口令）提供两件事：
+
+| 功能 | 做了什么 | 影响面 |
+|---|---|---|
+| 修改面板登录口令 | 生成新 salt+sha256 写入 `/etc/kelp/panel.json`（改前备份），随后面板自我重启 | 只影响面板登录；本机 `~/.config/kelp/kelp.env` 里的口令要同步改 |
+| 轮换组网网络密钥 | 公网 hub（本地改 env）→ A 站点 50.9（hub→50.9 走 SSH 公钥 + **限定范围的 sudo 白名单**跑 `kelp-apply-secret.sh`）→ 最后重建 B 站点容器（hub→NAS 用 `/etc/kelp/nas-access.env`（600 root））→ 校验组网 → 刷新门户配置 | 会短暂断线；**手机 / Mac / Windows 客户端里的密钥需手改** |
+
+设计要点（为什么这么做）：
+
+- **面板仍然只读为主**：写动作只有这两个，且都在 `/admin` 下、每次都要当前口令（顺带充当 CSRF 防护）。
+- **认证只用公钥不落密码**：hub→50.9 用一次性生成的 `id_ed25519_kelp`；只有 hub→NAS 因为 fnOS 上 `admin` 的 home 不存在（`/home/admin` 缺失 ⇒ 无法放 authorized_keys），才用 600 凭据文件。撤销：删 `/etc/kelp/nas-access.env` 即可让该腿自动失败并给出提示。
+- **换密钥的次序是刻意的**：先 hub、再 50.9、最后 NAS。因为 **重建 B 站点容器会掐断 hub→NAS 的隧道**（那条 SSH 正是穿过这个容器转发的），而且 fnOS 上重建要几分钟，所以 NAS 放最后 —— 万一慢/失败，前两台的密钥仍是一致的。相应地，NAS 这一步的判定不靠"命令返回成功"，而是事后轮询容器状态 + 容器内密钥前缀。
+
 ## 踩过的坑（都写进文档与脚本了）
 
 - **网关模式必须 SNAT**：只开 `ip_forward` + FORWARD 时 TCP 全不通，而 **ping 却能通**（EasyTier 对代理网段自行代答 ICMP）——"假通"。判据：**判断转发是否可用只能用 TCP，不能用 ping**。
 - **浏览器可达性 ≠ curl 可达性**：`curl -k` 会完全遮住证书链问题；验证浏览器要嘛不带 `-k`、要嘛用浏览器引擎（`scripts/check-panel-in-browser.sh` 用 WKWebView，且**鉴权页必须带凭据**，否则会得到 `-1001` 假阴性）。
 - **代理环境变量造成的假故障**：测试组网/内网目标必须 `--noproxy '*'`，否则一个挂掉的 `http_proxy` 会让所有探测显示"不通"。
 - **`docker restart` 不重读 `--env-file`**；**hub 重启会让 WireGuard 门户密钥重生成**（手机配置失效，需重跑刷新脚本）。
+- **换 B 站点密钥时不能同步等结果**：`docker rm -f` + `docker run` 会把控制它的 SSH 会话一起掐掉（隧道穿过该容器）——必须 `setsid` 派生执行 + 事后轮询（面板已如此实现）。
 - **bash 在 UTF-8 locale 下会把全角字符当成变量名的一部分**：`$VAR（中文）` 会报 `unbound variable`，脚本里一律写 `${VAR}`（本项目 `scripts/rotate-network-secret.sh` 就踩过）。
 - **公网节点是硬单点**：实测停掉后 3 秒内两站点间全部中断（含原本 P2P 直连的节点），重启 15 秒恢复。
 
