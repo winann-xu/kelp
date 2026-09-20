@@ -145,7 +145,7 @@
 | 本机 `~/kelp-run/` | 123 MB → 只留 `wg-phone-qr.png`(600) + `CLEANUP.md` | ✅ 可复用脚本已收编进 `scripts/` |
 | 凭据收口 | 各机口令统一进 `~/.config/kelp/creds.env`(600) | ✅ 脚本/文档内零明文 |
 | Mac 钥匙串 | `kelp-panel` 证书信任 **保留** | 保留：浏览器免警告访问面板所需（撤销：`security delete-certificate -c kelp-panel`） |
-| GitHub | 建公开仓库并推送 | ✅ |
+| GitHub | 建公开仓库并推送 | ✅ **https://github.com/winann-xu/kelp**（public；HTTPS 直推超时，改走 `git@ssh.github.com:443` + 本机密钥 `~/.ssh/xiaopacai_github`，已核对远端 HEAD = 本地 HEAD） |
 
 （以下为过程存档，已完成或已废弃）
 - [-] 安全组放行（用户已做）：11010 TCP+UDP、18080 TCP；11010 复测连通 ✅

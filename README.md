@@ -2,7 +2,7 @@
 
 自建的异地组网 + 远程访问系统：把两个异地局域网、一堆不装客户端的设备（电视 / AppleTV / 办公电脑）和手机，统一收进一张可控的私有网络里。用于替代商业软件"节点小宝"免费版的设备数与穿透限制。
 
-核心不自研网络协议——直接用 [EasyTier](https://github.com/EasyTier/EasyTier)（Apache-2.0，Rust）做组网，自研的只有"编排 + 护栏 + 面板 + 交付脚本"这一层。
+仓库：<https://github.com/winann-xu/kelp>（公开，不含任何凭据）。核心不自研网络协议——直接用 [EasyTier](https://github.com/EasyTier/EasyTier)（Apache-2.0，Rust）做组网，自研的只有"编排 + 护栏 + 面板 + 交付脚本"这一层。
 
 ## 一句话架构
 
